@@ -18,6 +18,7 @@ class Config:
     
     token: str
     deployment_id: str
+    deployment_slug: str
     output_path: Optional[str] = None
     output_dir: Optional[str] = None
     log_level: str = "INFO"
@@ -31,6 +32,8 @@ class Config:
             raise ValueError("SEMGREP_APP_TOKEN is required")
         if not self.deployment_id:
             raise ValueError("deployment_id is required")
+        if not self.deployment_slug:
+            raise ValueError("deployment_slug is required")
 
 
 class ConfigManager:
@@ -52,6 +55,7 @@ Examples:
 Environment variables:
   SEMGREP_APP_TOKEN     - API token
   SEMGREP_DEPLOYMENT_ID - Deployment ID
+  SEMGREP_DEPLOYMENT_SLUG - Deployment slug (for repository names)
   SEMGREP_OUTPUT_PATH   - Output file path
   SEMGREP_OUTPUT_DIR    - Output directory
   SEMGREP_BAD_LICENSES  - Bad license types (comma-separated)
@@ -67,6 +71,11 @@ Environment variables:
         parser.add_argument(
             "--deployment-id",
             help="Semgrep deployment ID (can also use SEMGREP_DEPLOYMENT_ID env var)"
+        )
+        
+        parser.add_argument(
+            "--deployment-slug",
+            help="Semgrep deployment slug for repository names (can also use SEMGREP_DEPLOYMENT_SLUG env var)"
         )
         
         parser.add_argument(
@@ -126,6 +135,7 @@ Environment variables:
         # Get values from args or environment variables
         token = args.token or os.getenv("SEMGREP_APP_TOKEN")
         deployment_id = args.deployment_id or os.getenv("SEMGREP_DEPLOYMENT_ID")
+        deployment_slug = args.deployment_slug or os.getenv("SEMGREP_DEPLOYMENT_SLUG")
         output_path = args.output or os.getenv("SEMGREP_OUTPUT_PATH")
         output_dir = args.output_dir or os.getenv("SEMGREP_OUTPUT_DIR")
         
@@ -143,10 +153,15 @@ Environment variables:
         if not deployment_id:
             print("Error: deployment_id is required. Provide via --deployment-id or environment variable.")
             sys.exit(1)
+            
+        if not deployment_slug:
+            print("Error: deployment_slug is required. Provide via --deployment-slug or environment variable.")
+            sys.exit(1)
         
         return Config(
             token=token,
             deployment_id=deployment_id,
+            deployment_slug=deployment_slug,
             output_path=output_path,
             output_dir=output_dir,
             log_level=log_level,

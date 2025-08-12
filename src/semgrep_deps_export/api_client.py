@@ -203,6 +203,57 @@ class SemgrepAPIClient:
                 logger.error(f"Unexpected error on page {page_count}: {str(e)}")
                 raise SemgrepAPIError(f"Unexpected error: {str(e)}")
     
+    def get_projects(self) -> Dict[str, Any]:
+        """Get all projects/repositories for the deployment."""
+        endpoint = f"/deployments/{self.config.deployment_slug}/projects"
+        
+        logger.info(f"Fetching projects for deployment slug: {self.config.deployment_slug}")
+        
+        try:
+            response = self.session.get(f"{self.BASE_URL}{endpoint}")
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                projects = response_data.get("projects", [])
+                logger.info(f"Retrieved {len(projects)} projects")
+                return response_data
+            else:
+                error_message = f"Failed to fetch projects: HTTP {response.status_code}"
+                try:
+                    error_detail = response.json().get("message", response.text)
+                    error_message = f"Failed to fetch projects: {error_detail}"
+                except:
+                    pass
+                raise SemgrepAPIError(error_message, response.status_code)
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error fetching projects: {str(e)}")
+            raise SemgrepAPIError(f"Network error: {str(e)}")
+    
+    def get_repository_mapping(self) -> Dict[str, str]:
+        """Get a mapping of repository_id -> repository_name."""
+        try:
+            logger.info("Building repository mapping...")
+            projects_response = self.get_projects()
+            
+            repo_mapping = {}
+            projects = projects_response.get("projects", [])
+            
+            for project in projects:
+                repo_id = str(project.get("id"))  # Convert to string for consistency
+                repo_name = project.get("name", f"Unknown-{repo_id}")
+                repo_mapping[repo_id] = repo_name
+                
+            logger.info(f"Built repository mapping for {len(repo_mapping)} repositories")
+            return repo_mapping
+            
+        except SemgrepAPIError as e:
+            logger.warning(f"Failed to fetch repository information: {e}")
+            return {}
+        except Exception as e:
+            logger.warning(f"Unexpected error fetching repositories: {e}")
+            return {}
+    
     def test_connection(self) -> bool:
         """Test the API connection and authentication."""
         try:

@@ -82,7 +82,7 @@ class ExcelExporter:
         
         # Define headers
         headers = [
-            "Repository ID",
+            "Repository Name",
             "Name",
             "Version",
             "Ecosystem",
@@ -103,7 +103,7 @@ class ExcelExporter:
         
         # Add data
         for row, dep in enumerate(dependencies, 2):
-            ws.cell(row=row, column=1, value=dep.repository_id)
+            ws.cell(row=row, column=1, value=dep.repository_name)
             ws.cell(row=row, column=2, value=dep.name)
             ws.cell(row=row, column=3, value=dep.version)
             ws.cell(row=row, column=4, value=dep.ecosystem)

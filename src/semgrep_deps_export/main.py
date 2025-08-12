@@ -24,11 +24,13 @@ class SemgrepDepsExporter:
     def __init__(self, config: Config):
         self.config = config
         self.api_client = SemgrepAPIClient(config)
-        self.data_processor = DataProcessor(bad_license_types=config.bad_license_types)
         self.excel_exporter = ExcelExporter(config)
         
         # Initialize progress tracker
         self.progress = ProgressTracker(description="Processing dependencies")
+        
+        # DataProcessor will be initialized after fetching repository mapping
+        self.data_processor = None
     
     def run(self) -> bool:
         """Run the complete export process."""
@@ -44,12 +46,23 @@ class SemgrepDepsExporter:
                     return False
                 logger.info("✓ API connection test successful")
             
-            # Step 2: Fetch all dependencies
+            # Step 2: Fetch repository mapping
+            with error_context("Fetching repository information"):
+                repository_mapping = self.api_client.get_repository_mapping()
+                logger.info(f"✓ Loaded {len(repository_mapping)} repository names")
+                
+                # Initialize data processor with repository mapping
+                self.data_processor = DataProcessor(
+                    bad_license_types=self.config.bad_license_types,
+                    repository_mapping=repository_mapping
+                )
+            
+            # Step 3: Fetch all dependencies
             with error_context("Fetching dependencies from API"):
                 dependencies_iterator = self.api_client.get_all_dependencies()
                 logger.info("✓ Starting dependency retrieval")
             
-            # Step 3: Process dependencies
+            # Step 4: Process dependencies
             with error_context("Processing dependency data"):
                 logger.info("Processing dependency data...")
                 processed_dependencies, processed_vulnerabilities = self.data_processor.process_all_dependencies(
@@ -63,11 +76,11 @@ class SemgrepDepsExporter:
                 logger.info(f"✓ Processed {len(processed_dependencies)} dependencies")
                 logger.info(f"✓ Found {len(processed_vulnerabilities)} vulnerabilities")
             
-            # Step 4: Generate summary
+            # Step 5: Generate summary
             summary = self.data_processor.get_processing_summary()
             self._log_summary(summary)
             
-            # Step 5: Export to Excel
+            # Step 6: Export to Excel
             with error_context("Exporting to Excel"):
                 output_path = self.excel_exporter.export(
                     processed_dependencies,

@@ -22,6 +22,7 @@ A Python application that retrieves dependency information from the Semgrep Supp
 - Python 3.8 or higher
 - SEMGREP_APP_TOKEN with API scope permissions
 - Deployment ID for the target Semgrep deployment
+- Deployment Slug for repository name resolution
 
 ## Installation
 
@@ -52,6 +53,7 @@ pip install semgrep-deps-export
    ```bash
    SEMGREP_APP_TOKEN=your_semgrep_api_token_here
    SEMGREP_DEPLOYMENT_ID=your_deployment_id_here
+   SEMGREP_DEPLOYMENT_SLUG=your_deployment_slug_here
    SEMGREP_OUTPUT_DIR=./reports
    SEMGREP_BAD_LICENSES=GPL-3.0,AGPL-3.0,LGPL-2.1,Commercial,Proprietary
    SEMGREP_LOG_LEVEL=INFO
@@ -66,13 +68,14 @@ pip install semgrep-deps-export
 
 ```bash
 # Using command-line arguments
-python src/semgrep_deps_export.py --token YOUR_TOKEN --deployment-id YOUR_DEPLOYMENT_ID
+python src/semgrep_deps_export.py --token YOUR_TOKEN --deployment-id YOUR_DEPLOYMENT_ID --deployment-slug YOUR_DEPLOYMENT_SLUG
 
 # Using environment variables
 export SEMGREP_APP_TOKEN="your_token_here"
 export SEMGREP_DEPLOYMENT_ID="your_deployment_id"
+export SEMGREP_DEPLOYMENT_SLUG="your_deployment_slug"
 export SEMGREP_LOG_LEVEL="DEBUG"
-python src/semgrep_deps_export.py --deployment-id YOUR_DEPLOYMENT_ID
+python src/semgrep_deps_export.py
 ```
 
 ### With Custom Output Path
@@ -81,6 +84,7 @@ python src/semgrep_deps_export.py --deployment-id YOUR_DEPLOYMENT_ID
 python src/semgrep_deps_export.py \
   --token YOUR_TOKEN \
   --deployment-id YOUR_DEPLOYMENT_ID \
+  --deployment-slug YOUR_DEPLOYMENT_SLUG \
   --output /path/to/report.xlsx
 ```
 
@@ -92,6 +96,7 @@ python src/semgrep_deps_export.py \
 |----------|-------------|----------|---------|
 | `--token` | Semgrep API token | Yes* | - |
 | `--deployment-id` | Deployment ID | Yes* | - |
+| `--deployment-slug` | Deployment slug (for repository names) | Yes* | - |
 | `--output` | Output XLSX file path | No | Auto-generated |
 | `--output-dir` | Output directory | No | ./output |
 | `--log-level` | Logging level | No | INFO |
@@ -109,6 +114,7 @@ You can set these in a `.env` file in the project root or as environment variabl
 |----------|-------------|---------|
 | `SEMGREP_APP_TOKEN` | API token | `abc123def456...` |
 | `SEMGREP_DEPLOYMENT_ID` | Deployment ID | `deployment-123` |
+| `SEMGREP_DEPLOYMENT_SLUG` | Deployment slug (for repository names) | `deployment-slug-456` |
 | `SEMGREP_OUTPUT_DIR` | Output directory | `./reports` |
 | `SEMGREP_OUTPUT_PATH` | Specific output file path (overrides OUTPUT_DIR) | `/tmp/report.xlsx` |
 | `SEMGREP_BAD_LICENSES` | Comma-separated bad license types | `GPL-3.0,AGPL-3.0,Commercial` |
@@ -132,6 +138,7 @@ python src/semgrep_deps_export.py --output-dir ./reports
 python src/semgrep_deps_export.py \
   --token your_token \
   --deployment-id deploy-123 \
+  --deployment-slug deployment-slug-456 \
   --output-dir ./custom-reports \
   --bad-licenses "GPL-3.0,AGPL-3.0,Commercial" \
   --log-level DEBUG \
@@ -152,7 +159,7 @@ The primary sheet contains 8 essential columns with clear, actionable data:
 
 | Column | Description | Example |
 |--------|-------------|---------|
-| **Repository ID** | Unique repository identifier | `1554601` |
+| **Repository Name** | Human-readable repository name | `returntocorp/semgrep` |
 | **Name** | Package/dependency name | `alembic` |
 | **Version** | Package version | `1.13.1` |
 | **Ecosystem** | Package ecosystem | `pypi` |
@@ -454,6 +461,7 @@ MIT License - see LICENSE file for details.
 - **Professional Output**: Business-ready Excel files suitable for compliance audits
 
 ### Key Features Added
+- **Repository Name Resolution**: Human-readable repository names instead of numeric IDs
 - **Bad License Highlighting**: Flag problematic licenses like GPL, AGPL, Commercial licenses
 - **Case-Insensitive Matching**: Flexible license detection regardless of case variations
 - **Red Row Highlighting**: Visual identification of compliance issues in Excel

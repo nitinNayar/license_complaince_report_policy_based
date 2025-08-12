@@ -19,6 +19,7 @@ class ProcessedDependency:
     
     id: str
     repository_id: str
+    repository_name: str
     name: str
     version: str
     ecosystem: str
@@ -68,8 +69,10 @@ class DataProcessor:
         "pub": "pub"
     }
     
-    def __init__(self, bad_license_types: Optional[List[str]] = None):
+    def __init__(self, bad_license_types: Optional[List[str]] = None, 
+                 repository_mapping: Optional[Dict[str, str]] = None):
         self.bad_license_types = [license.lower() for license in bad_license_types] if bad_license_types else []
+        self.repository_mapping = repository_mapping or {}
         self.processed_dependencies: List[ProcessedDependency] = []
         self.processed_vulnerabilities: List[ProcessedVulnerability] = []
         self.processing_stats = {
@@ -77,6 +80,19 @@ class DataProcessor:
             "validation_errors": 0,
             "transformation_errors": 0
         }
+    
+    def _get_repository_name(self, repository_id: str) -> str:
+        """Get repository name from ID, with fallback."""
+        if not repository_id:
+            return "Unknown Repository"
+            
+        # Try to get name from mapping
+        repo_name = self.repository_mapping.get(repository_id)
+        if repo_name:
+            return repo_name
+            
+        # Fallback to showing ID with prefix
+        return f"Repo-{repository_id}"
     
     def process_dependency(self, raw_dependency: Dict[str, Any]) -> Optional[ProcessedDependency]:
         """Process a single dependency from raw API data."""
@@ -109,9 +125,13 @@ class DataProcessor:
             projects_list = self._get_field(raw_dependency, "projects", [])
             projects = ", ".join(projects_list) if projects_list else "No project data"
             
+            # Get repository name from mapping
+            repository_name = self._get_repository_name(repository_id)
+            
             processed = ProcessedDependency(
                 id=dep_id,
                 repository_id=repository_id,
+                repository_name=repository_name,
                 name=name,
                 version=version,
                 ecosystem=ecosystem,
