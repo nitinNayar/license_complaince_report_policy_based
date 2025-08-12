@@ -7,11 +7,14 @@ Contains helper functions for logging, progress tracking, and other common opera
 import logging
 import sys
 import time
+import os
 from typing import Optional, Any, Iterator
 from contextlib import contextmanager
+from datetime import datetime
 
 
-def setup_logging(level: str = "INFO", format_string: Optional[str] = None) -> None:
+def setup_logging(level: str = "INFO", format_string: Optional[str] = None, 
+                  deployment_id: Optional[str] = None) -> None:
     """Setup logging configuration for the application."""
     
     if format_string is None:
@@ -20,14 +23,33 @@ def setup_logging(level: str = "INFO", format_string: Optional[str] = None) -> N
     # Convert string level to logging level
     numeric_level = getattr(logging, level.upper(), logging.INFO)
     
+    # Create handlers list
+    handlers = [logging.StreamHandler(sys.stdout)]
+    
+    # Add file handler if deployment_id is provided
+    if deployment_id:
+        # Create logs directory if it doesn't exist
+        logs_dir = './logs'
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # Generate timestamp for log filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_filename = f"semgrep_export_{deployment_id}_{timestamp}.log"
+        log_filepath = os.path.join(logs_dir, log_filename)
+        
+        # Add file handler
+        file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+        file_handler.setLevel(numeric_level)
+        file_handler.setFormatter(logging.Formatter(format_string, datefmt='%Y-%m-%d %H:%M:%S'))
+        handlers.append(file_handler)
+    
     # Configure root logger
     logging.basicConfig(
         level=numeric_level,
         format=format_string,
         datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=handlers,
+        force=True  # Force reconfiguration if already configured
     )
     
     # Set specific loggers to appropriate levels

@@ -54,6 +54,8 @@ Environment variables:
   SEMGREP_DEPLOYMENT_ID - Deployment ID
   SEMGREP_OUTPUT_PATH   - Output file path
   SEMGREP_OUTPUT_DIR    - Output directory
+  SEMGREP_BAD_LICENSES  - Bad license types (comma-separated)
+  SEMGREP_LOG_LEVEL     - Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
             """
         )
         
@@ -81,7 +83,7 @@ Environment variables:
             "--log-level",
             choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
             default="INFO",
-            help="Logging level (default: INFO)"
+            help="Logging level (can also use SEMGREP_LOG_LEVEL env var, default: INFO)"
         )
         
         parser.add_argument(
@@ -131,6 +133,9 @@ Environment variables:
         bad_licenses_str = getattr(args, 'bad_licenses', None) or os.getenv("SEMGREP_BAD_LICENSES")
         bad_license_types = self._parse_license_list(bad_licenses_str) if bad_licenses_str else None
         
+        # Handle log level from environment variable
+        log_level = args.log_level or os.getenv("SEMGREP_LOG_LEVEL", "INFO")
+        
         if not token:
             print("Error: SEMGREP_APP_TOKEN is required. Provide via --token or environment variable.")
             sys.exit(1)
@@ -144,7 +149,7 @@ Environment variables:
             deployment_id=deployment_id,
             output_path=output_path,
             output_dir=output_dir,
-            log_level=args.log_level,
+            log_level=log_level,
             max_retries=args.max_retries,
             timeout=args.timeout,
             bad_license_types=bad_license_types

@@ -14,6 +14,7 @@ A Python application that retrieves dependency information from the Semgrep Supp
 - **Flexible Configuration**: CLI arguments, environment variables, and .env file support
 - **Progress Tracking**: Real-time progress indicators for long operations
 - **Performance Optimized**: Processes 33k+ dependencies in ~50 seconds with 1.2MB output files
+- **Dual Logging**: Console and file logging with automatic log file generation
 - **Comprehensive Testing**: Unit and integration tests included
 
 ## Requirements
@@ -53,6 +54,7 @@ pip install semgrep-deps-export
    SEMGREP_DEPLOYMENT_ID=your_deployment_id_here
    SEMGREP_OUTPUT_DIR=./reports
    SEMGREP_BAD_LICENSES=GPL-3.0,AGPL-3.0,LGPL-2.1,Commercial,Proprietary
+   SEMGREP_LOG_LEVEL=INFO
    ```
 
 3. Run the tool:
@@ -69,6 +71,7 @@ python src/semgrep_deps_export.py --token YOUR_TOKEN --deployment-id YOUR_DEPLOY
 # Using environment variables
 export SEMGREP_APP_TOKEN="your_token_here"
 export SEMGREP_DEPLOYMENT_ID="your_deployment_id"
+export SEMGREP_LOG_LEVEL="DEBUG"
 python src/semgrep_deps_export.py --deployment-id YOUR_DEPLOYMENT_ID
 ```
 
@@ -109,6 +112,7 @@ You can set these in a `.env` file in the project root or as environment variabl
 | `SEMGREP_OUTPUT_DIR` | Output directory | `./reports` |
 | `SEMGREP_OUTPUT_PATH` | Specific output file path (overrides OUTPUT_DIR) | `/tmp/report.xlsx` |
 | `SEMGREP_BAD_LICENSES` | Comma-separated bad license types | `GPL-3.0,AGPL-3.0,Commercial` |
+| `SEMGREP_LOG_LEVEL` | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) | `INFO` |
 
 **Note**: Create a `.env` file by copying `.env.example` and updating with your values.
 
@@ -265,6 +269,8 @@ The tool automatically handles pagination:
 │   ├── test_data_processor.py
 │   ├── test_utils.py
 │   └── test_integration.py
+├── logs/                        # Auto-generated log files
+├── reports/                     # Generated Excel reports
 ├── requirements.txt
 ├── pyproject.toml
 └── README.md
@@ -375,6 +381,40 @@ python src/semgrep_deps_export.py \
   --log-level DEBUG
 ```
 
+## Logging
+
+### Dual Output Logging
+The tool provides comprehensive logging with both console and file output:
+
+- **Console Logging**: Real-time progress and status updates displayed in terminal
+- **File Logging**: Complete logs automatically saved to `./logs/` directory
+- **Log File Naming**: `semgrep_export_{deployment_id}_{timestamp}.log`
+  - Example: `semgrep_export_37285_20250812_143530.log`
+
+### Log File Features
+- **Automatic Directory Creation**: `./logs/` folder created if it doesn't exist  
+- **Complete Coverage**: File logs contain identical output to console
+- **UTF-8 Encoding**: Proper character handling for all log content
+- **Timestamped**: Each run creates a unique log file with deployment ID and timestamp
+- **Persistent**: Log files preserved for audit trails and troubleshooting
+
+### Log Levels
+Configure logging verbosity with `--log-level` or `SEMGREP_LOG_LEVEL`:
+- **DEBUG**: Detailed API requests, responses, and internal operations
+- **INFO**: Progress updates, summaries, and key status messages (default)
+- **WARNING**: Non-critical issues and important notices
+- **ERROR**: Errors and failures
+- **CRITICAL**: Critical system failures
+
+### Example Log Output
+```bash
+# Console and file both contain:
+2025-08-12 08:35:40 - semgrep_deps_export.main - INFO - Semgrep Dependencies Export Tool v1.0.0
+2025-08-12 08:35:40 - semgrep_deps_export.main - INFO - Starting Semgrep Dependencies Export
+2025-08-12 08:35:40 - semgrep_deps_export.main - INFO - Deployment ID: 37285
+2025-08-12 08:36:38 - semgrep_deps_export.main - INFO - EXPORT COMPLETED SUCCESSFULLY
+```
+
 ### Support
 
 For issues and bug reports:
@@ -409,6 +449,7 @@ MIT License - see LICENSE file for details.
 - **Flexible Configuration**: CLI arguments, environment variables, and .env file support
 - **Comprehensive Error Handling**: Robust retry logic, exponential backoff, and detailed logging
 - **Security Features**: Token masking, HTTPS enforcement, and secure credential management
+- **Dual Logging System**: Console and file logging with automatic log file generation
 - **Full Test Coverage**: Unit and integration tests for all components
 - **Professional Output**: Business-ready Excel files suitable for compliance audits
 
@@ -419,3 +460,5 @@ MIT License - see LICENSE file for details.
 - **Configuration Options**: `--bad-licenses` CLI arg and `SEMGREP_BAD_LICENSES` env var
 - **Optimized Data Structure**: Removed unused vulnerability and timestamp columns
 - **Enhanced Performance**: Faster processing and smaller file sizes
+- **Automatic File Logging**: Timestamped log files saved to `./logs/` directory
+- **Log Level Configuration**: Support for DEBUG, INFO, WARNING, ERROR, CRITICAL levels

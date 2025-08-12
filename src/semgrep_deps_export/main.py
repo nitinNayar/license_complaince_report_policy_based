@@ -131,7 +131,7 @@ def main() -> int:
         config = config_manager.load_config()
         
         # Setup logging
-        setup_logging(level=config.log_level)
+        setup_logging(level=config.log_level, deployment_id=config.deployment_id)
         
         logger.info("Semgrep Dependencies Export Tool v1.0.0")
         
