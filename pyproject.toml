@@ -49,9 +49,9 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/example/semgrep-deps-export"
-"Bug Reports" = "https://github.com/example/semgrep-deps-export/issues"
-"Source" = "https://github.com/example/semgrep-deps-export"
+"Homepage" = "https://github.com/nitinNayar/license_compliance_report"
+"Bug Reports" = "https://github.com/nitinNayar/license_compliance_report/issues"
+"Source" = "https://github.com/nitinNayar/license_compliance_report"
 
 [project.scripts]
 semgrep-deps-export = "semgrep_deps_export.main:main"
