@@ -59,7 +59,7 @@ SEMGREP_BAD_LICENSES=GPL-3.0,AGPL-3.0,Commercial,Proprietary
 
 ## Output Format
 
-The tool generates Excel files with 8 essential columns:
+The tool generates Excel files with 8 essential columns. See [`example_license_report.xlsx`](example_license_report.xlsx) for a sample of what the output looks like:
 
 | Column | Description | Example |
 |--------|-------------|---------|
