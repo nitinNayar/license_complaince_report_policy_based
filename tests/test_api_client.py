@@ -25,7 +25,8 @@ class TestSemgrepAPIClient:
         """Create test configuration."""
         return Config(
             token="test_token_12345678901234567890",
-            deployment_id="test_deployment_123"
+            deployment_id="test_deployment_123",
+            deployment_slug="test_org"
         )
     
     @pytest.fixture
@@ -281,3 +282,302 @@ class TestSemgrepAPIClient:
         
         assert request_data["cursor"] == "test_cursor"
         assert request_data["limit"] == 500
+    
+    # Tests for new per-repository functionality
+    
+    @responses.activate
+    def test_get_repositories_list_success(self, client):
+        """Test successful retrieval of repositories list."""
+        mock_projects_response = {
+            "projects": [
+                {
+                    "id": 12345,
+                    "name": "test-repo-1",
+                    "url": "https://github.com/org/repo1",
+                    "default_branch": "main"
+                },
+                {
+                    "id": 67890,
+                    "name": "test-repo-2", 
+                    "url": "https://github.com/org/repo2",
+                    "default_branch": "master"
+                }
+            ]
+        }
+        
+        responses.add(
+            responses.GET,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_org/projects",
+            json=mock_projects_response,
+            status=200
+        )
+        
+        repositories = client.get_repositories_list()
+        
+        assert len(repositories) == 2
+        assert repositories[0]["name"] == "test-repo-1"
+        assert repositories[1]["id"] == 67890
+    
+    @responses.activate
+    def test_get_repositories_list_pagination(self, client):
+        """Test successful retrieval of repositories list with pagination."""
+        # First page response
+        mock_projects_page1 = {
+            "projects": [
+                {"id": 1, "name": "repo-1"},
+                {"id": 2, "name": "repo-2"}
+            ]
+        }
+        
+        # Second page response (smaller than page_size, indicating last page)
+        mock_projects_page2 = {
+            "projects": [
+                {"id": 3, "name": "repo-3"}
+            ]
+        }
+        
+        responses.add(
+            responses.GET,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_org/projects",
+            json=mock_projects_page1,
+            status=200
+        )
+        
+        responses.add(
+            responses.GET,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_org/projects",
+            json=mock_projects_page2,
+            status=200
+        )
+        
+        repositories = client.get_repositories_list(page_size=2)
+        
+        assert len(repositories) == 3
+        assert repositories[0]["name"] == "repo-1"
+        assert repositories[1]["name"] == "repo-2"
+        assert repositories[2]["name"] == "repo-3"
+        
+        # Verify pagination parameters were sent correctly
+        assert len(responses.calls) == 2
+        
+        # First call should have page=0, page_size=2
+        first_call_params = responses.calls[0].request.params
+        assert first_call_params["page"] == "0"
+        assert first_call_params["page_size"] == "2"
+        
+        # Second call should have page=1, page_size=2
+        second_call_params = responses.calls[1].request.params
+        assert second_call_params["page"] == "1"
+        assert second_call_params["page_size"] == "2"
+    
+    @responses.activate
+    def test_get_repositories_list_empty_page(self, client):
+        """Test repositories list pagination stops when empty page received."""
+        # First page has repositories
+        mock_projects_page1 = {
+            "projects": [
+                {"id": 1, "name": "repo-1"},
+                {"id": 2, "name": "repo-2"}
+            ]
+        }
+        
+        # Second page is empty
+        mock_projects_page2 = {
+            "projects": []
+        }
+        
+        responses.add(
+            responses.GET,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_org/projects",
+            json=mock_projects_page1,
+            status=200
+        )
+        
+        responses.add(
+            responses.GET,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_org/projects",
+            json=mock_projects_page2,
+            status=200
+        )
+        
+        repositories = client.get_repositories_list(page_size=2)
+        
+        assert len(repositories) == 2
+        assert len(responses.calls) == 2  # Should stop after empty page
+    
+    @responses.activate
+    def test_get_dependencies_for_repository_success(self, client):
+        """Test successful retrieval of dependencies for specific repository."""
+        mock_dependencies_response = {
+            "dependencies": [
+                {
+                    "repositoryId": "12345",
+                    "package": {"name": "requests", "versionSpecifier": "2.28.1"},
+                    "ecosystem": "pypi",
+                    "transitivity": "DIRECT",
+                    "licenses": ["MIT"]
+                }
+            ],
+            "hasMore": False
+        }
+        
+        responses.add(
+            responses.POST,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_deployment_123/dependencies",
+            json=mock_dependencies_response,
+            status=200
+        )
+        
+        result = client.get_dependencies_for_repository("12345")
+        
+        assert len(result["dependencies"]) == 1
+        assert result["dependencies"][0]["package"]["name"] == "requests"
+        
+        # Verify the request payload includes repository filter
+        request = responses.calls[0].request
+        request_data = json.loads(request.body)
+        assert "dependencyFilter" in request_data
+        assert request_data["dependencyFilter"]["repositoryId"] == ["12345"]
+    
+    @responses.activate
+    def test_get_dependencies_for_repository_with_pagination(self, client):
+        """Test repository dependencies with pagination."""
+        mock_dependencies_response = {
+            "dependencies": [
+                {
+                    "repositoryId": "12345",
+                    "package": {"name": "requests", "versionSpecifier": "2.28.1"},
+                    "ecosystem": "pypi",
+                    "transitivity": "DIRECT",
+                    "licenses": ["MIT"]
+                }
+            ],
+            "hasMore": False,
+            "cursor": "next_page_cursor"
+        }
+        
+        responses.add(
+            responses.POST,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_deployment_123/dependencies",
+            json=mock_dependencies_response,
+            status=200
+        )
+        
+        result = client.get_dependencies_for_repository("12345", cursor="current_cursor", limit=500)
+        
+        # Verify the request includes cursor and repository filter
+        request = responses.calls[0].request
+        request_data = json.loads(request.body)
+        assert request_data["cursor"] == "current_cursor"
+        assert request_data["limit"] == 500
+        assert request_data["dependencyFilter"]["repositoryId"] == ["12345"]
+    
+    @responses.activate
+    def test_get_all_dependencies_by_repository_success(self, client):
+        """Test successful retrieval of all dependencies by repository."""
+        # Mock projects response
+        mock_projects_response = {
+            "projects": [
+                {"id": 12345, "name": "test-repo-1", "url": "https://github.com/org/repo1"},
+                {"id": 67890, "name": "test-repo-2", "url": "https://github.com/org/repo2"}
+            ]
+        }
+        
+        responses.add(
+            responses.GET,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_org/projects",
+            json=mock_projects_response,
+            status=200
+        )
+        
+        # Mock dependencies responses for each repository
+        mock_deps_repo1 = {
+            "dependencies": [
+                {
+                    "repositoryId": "12345",
+                    "package": {"name": "requests", "versionSpecifier": "2.28.1"},
+                    "ecosystem": "pypi",
+                    "transitivity": "DIRECT",
+                    "licenses": ["MIT"]
+                }
+            ],
+            "hasMore": False
+        }
+        
+        mock_deps_repo2 = {
+            "dependencies": [
+                {
+                    "repositoryId": "67890", 
+                    "package": {"name": "numpy", "versionSpecifier": "1.21.0"},
+                    "ecosystem": "pypi",
+                    "transitivity": "DIRECT",
+                    "licenses": ["BSD"]
+                }
+            ],
+            "hasMore": False
+        }
+        
+        responses.add(
+            responses.POST,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_deployment_123/dependencies",
+            json=mock_deps_repo1,
+            status=200
+        )
+        
+        responses.add(
+            responses.POST,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_deployment_123/dependencies", 
+            json=mock_deps_repo2,
+            status=200
+        )
+        
+        dependencies = list(client.get_all_dependencies_by_repository())
+        
+        assert len(dependencies) == 2
+        
+        # Verify enrichment with repository details
+        assert "repository_details" in dependencies[0]
+        assert dependencies[0]["repository_details"]["name"] == "test-repo-1"
+        assert dependencies[1]["repository_details"]["name"] == "test-repo-2"
+        
+        # Verify API calls were made correctly
+        assert len(responses.calls) == 3  # 1 projects call + 2 dependencies calls
+    
+    @responses.activate  
+    def test_get_all_dependencies_by_repository_fallback_on_error(self, client):
+        """Test fallback to deployment-wide fetch when repository listing fails."""
+        # Mock failed projects response
+        responses.add(
+            responses.GET,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_org/projects",
+            json={"error": "Not found"},
+            status=404
+        )
+        
+        # Mock successful deployment-wide dependencies response (fallback)
+        mock_dependencies_response = {
+            "dependencies": [
+                {
+                    "repositoryId": "12345",
+                    "package": {"name": "requests", "versionSpecifier": "2.28.1"},
+                    "ecosystem": "pypi",
+                    "transitivity": "DIRECT", 
+                    "licenses": ["MIT"]
+                }
+            ],
+            "hasMore": False
+        }
+        
+        responses.add(
+            responses.POST,
+            f"{SemgrepAPIClient.BASE_URL}/deployments/test_deployment_123/dependencies",
+            json=mock_dependencies_response,
+            status=200
+        )
+        
+        dependencies = list(client.get_all_dependencies_by_repository())
+        
+        assert len(dependencies) == 1
+        assert dependencies[0]["package"]["name"] == "requests"
+        # Should not have repository_details since it fell back to deployment-wide fetch
+        assert "repository_details" not in dependencies[0]

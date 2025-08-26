@@ -27,6 +27,7 @@ class ProcessedDependency:
     transitivity: str
     licenses: str
     bad_license: bool
+    review_license: bool
     vulnerability_count: int
     critical_vulns: int
     high_vulns: int
@@ -70,8 +71,10 @@ class DataProcessor:
     }
     
     def __init__(self, bad_license_types: Optional[List[str]] = None, 
+                 review_license_types: Optional[List[str]] = None,
                  repository_mapping: Optional[Dict[str, str]] = None):
         self.bad_license_types = [license.lower() for license in bad_license_types] if bad_license_types else []
+        self.review_license_types = [license.lower() for license in review_license_types] if review_license_types else []
         self.repository_mapping = repository_mapping or {}
         self.processed_dependencies: List[ProcessedDependency] = []
         self.processed_vulnerabilities: List[ProcessedVulnerability] = []
@@ -94,6 +97,19 @@ class DataProcessor:
         # Fallback to showing ID with prefix
         return f"Repo-{repository_id}"
     
+    def _get_repository_name_enhanced(self, raw_dependency: Dict[str, Any], repository_id: str) -> str:
+        """Get repository name with enhanced support for per-repository mode data."""
+        # First check if there are enhanced repository details (from per-repository mode)
+        repository_details = raw_dependency.get("repository_details")
+        if repository_details:
+            repo_name = repository_details.get("name")
+            if repo_name:
+                logger.debug(f"Using enhanced repository name: {repo_name}")
+                return repo_name
+        
+        # Fall back to standard repository mapping
+        return self._get_repository_name(repository_id)
+    
     def process_dependency(self, raw_dependency: Dict[str, Any]) -> Optional[ProcessedDependency]:
         """Process a single dependency from raw API data."""
         try:
@@ -112,6 +128,7 @@ class DataProcessor:
             licenses_list = self._get_field(raw_dependency, "licenses", [])
             licenses = ", ".join(licenses_list) if licenses_list else "Unknown"
             bad_license = self._check_bad_license(licenses_list)
+            review_license = self._check_review_license(licenses_list)
             
             # Process vulnerabilities (may not exist in API response)
             vulnerabilities = self._get_field(raw_dependency, "vulnerabilities", [])
@@ -125,8 +142,8 @@ class DataProcessor:
             projects_list = self._get_field(raw_dependency, "projects", [])
             projects = ", ".join(projects_list) if projects_list else "No project data"
             
-            # Get repository name from mapping
-            repository_name = self._get_repository_name(repository_id)
+            # Get repository name from mapping or enhanced repository details
+            repository_name = self._get_repository_name_enhanced(raw_dependency, repository_id)
             
             processed = ProcessedDependency(
                 id=dep_id,
@@ -139,6 +156,7 @@ class DataProcessor:
                 transitivity=transitivity,
                 licenses=licenses,
                 bad_license=bad_license,
+                review_license=review_license,
                 vulnerability_count=len(vulnerabilities),
                 critical_vulns=vuln_counts["critical"],
                 high_vulns=vuln_counts["high"],
@@ -197,6 +215,17 @@ class DataProcessor:
         
         # Check if any license matches bad license list
         return any(license in self.bad_license_types for license in normalized_licenses)
+    
+    def _check_review_license(self, licenses_list: List[str]) -> bool:
+        """Check if any license in the list requires review."""
+        if not self.review_license_types or not licenses_list:
+            return False
+        
+        # Convert licenses to lowercase for case-insensitive comparison
+        normalized_licenses = [license.lower().strip() for license in licenses_list]
+        
+        # Check if any license matches review license list
+        return any(license in self.review_license_types for license in normalized_licenses)
     
     def _count_vulnerabilities_by_severity(self, vulnerabilities: List[Dict[str, Any]]) -> Dict[str, int]:
         """Count vulnerabilities by severity level."""
@@ -276,13 +305,18 @@ class DataProcessor:
         # Calculate bad license statistics
         bad_license_count = sum(1 for dep in self.processed_dependencies if dep.bad_license)
         
+        # Calculate review license statistics
+        review_license_count = sum(1 for dep in self.processed_dependencies if dep.review_license)
+        
         return {
             "dependencies": {
                 "total": len(self.processed_dependencies),
                 "with_vulnerabilities": sum(1 for dep in self.processed_dependencies if dep.vulnerability_count > 0),
                 "without_vulnerabilities": sum(1 for dep in self.processed_dependencies if dep.vulnerability_count == 0),
                 "with_bad_licenses": bad_license_count,
-                "without_bad_licenses": len(self.processed_dependencies) - bad_license_count
+                "without_bad_licenses": len(self.processed_dependencies) - bad_license_count,
+                "with_review_licenses": review_license_count,
+                "without_review_licenses": len(self.processed_dependencies) - review_license_count
             },
             "vulnerabilities": {
                 "total": len(self.processed_vulnerabilities),

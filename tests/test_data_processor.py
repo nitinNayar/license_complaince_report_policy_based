@@ -243,3 +243,123 @@ class TestDataProcessor:
         assert result.licenses == "Unknown"
         assert result.vulnerability_count == 0
         assert result.projects == "Unknown"
+
+
+class TestLicenseChecking:
+    """Test cases for license checking functionality."""
+    
+    def test_check_bad_license_match(self):
+        """Test bad license detection with matches."""
+        processor = DataProcessor(bad_license_types=["GPL-3.0", "AGPL-3.0"])
+        
+        # Should match
+        assert processor._check_bad_license(["GPL-3.0"]) is True
+        assert processor._check_bad_license(["MIT", "GPL-3.0"]) is True
+        assert processor._check_bad_license(["AGPL-3.0", "Apache-2.0"]) is True
+        
+        # Case insensitive matching
+        assert processor._check_bad_license(["gpl-3.0"]) is True
+        assert processor._check_bad_license(["GPL-3.0 "]) is True  # With spaces
+    
+    def test_check_bad_license_no_match(self):
+        """Test bad license detection with no matches."""
+        processor = DataProcessor(bad_license_types=["GPL-3.0", "AGPL-3.0"])
+        
+        # Should not match
+        assert processor._check_bad_license(["MIT"]) is False
+        assert processor._check_bad_license(["Apache-2.0", "BSD-3-Clause"]) is False
+        assert processor._check_bad_license([]) is False
+    
+    def test_check_review_license_match(self):
+        """Test review license detection with matches."""
+        processor = DataProcessor(review_license_types=["MIT", "Apache-2.0"])
+        
+        # Should match
+        assert processor._check_review_license(["MIT"]) is True
+        assert processor._check_review_license(["MIT", "GPL-3.0"]) is True
+        assert processor._check_review_license(["Apache-2.0", "BSD-3-Clause"]) is True
+        
+        # Case insensitive matching
+        assert processor._check_review_license(["mit"]) is True
+        assert processor._check_review_license(["Apache-2.0 "]) is True  # With spaces
+    
+    def test_check_review_license_no_match(self):
+        """Test review license detection with no matches."""
+        processor = DataProcessor(review_license_types=["MIT", "Apache-2.0"])
+        
+        # Should not match
+        assert processor._check_review_license(["GPL-3.0"]) is False
+        assert processor._check_review_license(["BSD-3-Clause", "LGPL-2.1"]) is False
+        assert processor._check_review_license([]) is False
+    
+    def test_license_checking_no_config(self):
+        """Test license checking when no license types are configured."""
+        processor = DataProcessor()  # No license types configured
+        
+        # Should return False when no license types are configured
+        assert processor._check_bad_license(["GPL-3.0"]) is False
+        assert processor._check_review_license(["MIT"]) is False
+    
+    def test_dual_license_detection(self):
+        """Test dependency with both bad and review licenses."""
+        processor = DataProcessor(
+            bad_license_types=["GPL-3.0"],
+            review_license_types=["MIT"]
+        )
+        
+        sample_dependency = {
+            "repositoryId": "repo-123",
+            "package": {"name": "test-package", "versionSpecifier": "1.0.0"},
+            "ecosystem": "npm",
+            "transitivity": "DIRECT",
+            "licenses": ["MIT", "GPL-3.0"]  # Both review and bad
+        }
+        
+        result = processor.process_dependency(sample_dependency)
+        
+        assert result.bad_license is True
+        assert result.review_license is True
+        assert result.licenses == "MIT, GPL-3.0"
+    
+    def test_processing_summary_with_license_counts(self):
+        """Test processing summary includes license counts."""
+        processor = DataProcessor(
+            bad_license_types=["GPL-3.0"],
+            review_license_types=["MIT"]
+        )
+        
+        # Add some test dependencies
+        deps = [
+            {
+                "repositoryId": "repo-1",
+                "package": {"name": "pkg1", "versionSpecifier": "1.0.0"},
+                "ecosystem": "npm",
+                "transitivity": "DIRECT",
+                "licenses": ["MIT"]  # Review only
+            },
+            {
+                "repositoryId": "repo-2", 
+                "package": {"name": "pkg2", "versionSpecifier": "2.0.0"},
+                "ecosystem": "pypi",
+                "transitivity": "DIRECT",
+                "licenses": ["GPL-3.0"]  # Bad only
+            },
+            {
+                "repositoryId": "repo-3",
+                "package": {"name": "pkg3", "versionSpecifier": "3.0.0"}, 
+                "ecosystem": "maven",
+                "transitivity": "DIRECT",
+                "licenses": ["Apache-2.0"]  # Neither
+            }
+        ]
+        
+        for dep in deps:
+            processor.process_dependency(dep)
+        
+        summary = processor.get_processing_summary()
+        
+        assert summary["dependencies"]["total"] == 3
+        assert summary["dependencies"]["with_bad_licenses"] == 1
+        assert summary["dependencies"]["without_bad_licenses"] == 2
+        assert summary["dependencies"]["with_review_licenses"] == 1
+        assert summary["dependencies"]["without_review_licenses"] == 2

@@ -37,6 +37,7 @@ class SemgrepDepsExporter:
         logger.info("Starting Semgrep Dependencies Export")
         logger.info(f"Deployment ID: {self.config.deployment_id}")
         logger.info(f"Log Level: {self.config.log_level}")
+        logger.info(f"Fetch Mode: {'Per-Repository' if self.config.per_repository else 'Deployment-Wide'}")
         
         try:
             # Step 1: Test API connection
@@ -54,13 +55,20 @@ class SemgrepDepsExporter:
                 # Initialize data processor with repository mapping
                 self.data_processor = DataProcessor(
                     bad_license_types=self.config.bad_license_types,
+                    review_license_types=self.config.review_license_types,
                     repository_mapping=repository_mapping
                 )
             
             # Step 3: Fetch all dependencies
             with error_context("Fetching dependencies from API"):
-                dependencies_iterator = self.api_client.get_all_dependencies()
-                logger.info("✓ Starting dependency retrieval")
+                if self.config.per_repository:
+                    logger.info("Using per-repository dependency fetching mode")
+                    dependencies_iterator = self.api_client.get_all_dependencies_by_repository()
+                    logger.info("✓ Starting per-repository dependency retrieval")
+                else:
+                    logger.info("Using deployment-wide dependency fetching mode")
+                    dependencies_iterator = self.api_client.get_all_dependencies()
+                    logger.info("✓ Starting deployment-wide dependency retrieval")
             
             # Step 4: Process dependencies
             with error_context("Processing dependency data"):
@@ -127,6 +135,8 @@ class SemgrepDepsExporter:
         logger.info(f"    Without vulnerabilities: {summary['dependencies']['without_vulnerabilities']}")
         logger.info(f"    With bad licenses: {summary['dependencies']['with_bad_licenses']}")
         logger.info(f"    Without bad licenses: {summary['dependencies']['without_bad_licenses']}")
+        logger.info(f"    With review licenses: {summary['dependencies']['with_review_licenses']}")
+        logger.info(f"    Without review licenses: {summary['dependencies']['without_review_licenses']}")
         
         logger.info(f"  Vulnerabilities:")
         logger.info(f"    Total: {summary['vulnerabilities']['total']}")

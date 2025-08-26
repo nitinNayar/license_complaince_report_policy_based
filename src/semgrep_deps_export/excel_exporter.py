@@ -89,6 +89,7 @@ class ExcelExporter:
             "Package Manager",
             "Transitivity",
             "Bad_License",
+            "Review_License",
             "Licenses"
         ]
         
@@ -110,7 +111,8 @@ class ExcelExporter:
             ws.cell(row=row, column=5, value=dep.package_manager)
             ws.cell(row=row, column=6, value=dep.transitivity)
             ws.cell(row=row, column=7, value=dep.bad_license)
-            ws.cell(row=row, column=8, value=dep.licenses)
+            ws.cell(row=row, column=8, value=dep.review_license)
+            ws.cell(row=row, column=9, value=dep.licenses)
             
             # Apply styles to data cells
             for col in range(1, len(headers) + 1):
@@ -120,9 +122,16 @@ class ExcelExporter:
                 # All columns use left alignment now (no number columns remaining)
                 cell.alignment = self.cell_alignment
             
-            # Apply red highlighting for bad license rows
-            if dep.bad_license:
+            # Apply highlighting for license types
+            if dep.bad_license and dep.review_license:
+                # Both bad and review licenses - use combined formatting
+                self._apply_dual_license_formatting(ws, row, len(headers))
+            elif dep.bad_license:
+                # Bad license only - red highlighting
                 self._apply_bad_license_formatting(ws, row, len(headers))
+            elif dep.review_license:
+                # Review license only - yellow highlighting
+                self._apply_review_license_formatting(ws, row, len(headers))
         
         # Auto-adjust column widths
         for col in range(1, len(headers) + 1):
@@ -161,6 +170,42 @@ class ExcelExporter:
                 cell.fill = bad_license_fill
             else:
                 cell.fill = bad_license_fill
+                cell.border = self.border
+    
+    def _apply_review_license_formatting(self, ws: Worksheet, row: int, num_cols: int) -> None:
+        """Apply yellow background formatting to review license rows."""
+        review_license_fill = PatternFill(
+            start_color="FFFFCC",  # Light yellow background
+            end_color="FFFFCC",
+            fill_type="solid"
+        )
+        
+        # Apply to all cells in the row
+        for col in range(1, num_cols + 1):
+            cell = ws.cell(row=row, column=col)
+            # Preserve existing border formatting
+            if cell.border:
+                cell.fill = review_license_fill
+            else:
+                cell.fill = review_license_fill
+                cell.border = self.border
+    
+    def _apply_dual_license_formatting(self, ws: Worksheet, row: int, num_cols: int) -> None:
+        """Apply combined formatting for dependencies with both bad and review licenses."""
+        dual_license_fill = PatternFill(
+            start_color="FFDDAA",  # Light orange background (mix of red and yellow)
+            end_color="FFDDAA",
+            fill_type="solid"
+        )
+        
+        # Apply to all cells in the row
+        for col in range(1, num_cols + 1):
+            cell = ws.cell(row=row, column=col)
+            # Preserve existing border formatting
+            if cell.border:
+                cell.fill = dual_license_fill
+            else:
+                cell.fill = dual_license_fill
                 cell.border = self.border
     
     def _create_vulnerabilities_sheet(self, vulnerabilities: List[ProcessedVulnerability]) -> Optional[Worksheet]:

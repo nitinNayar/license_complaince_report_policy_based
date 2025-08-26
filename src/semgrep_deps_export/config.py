@@ -25,6 +25,8 @@ class Config:
     max_retries: int = 3
     timeout: int = 30
     bad_license_types: Optional[List[str]] = None
+    review_license_types: Optional[List[str]] = None
+    per_repository: bool = False
     
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -59,7 +61,9 @@ Environment variables:
   SEMGREP_OUTPUT_PATH   - Output file path
   SEMGREP_OUTPUT_DIR    - Output directory
   SEMGREP_BAD_LICENSES  - Bad license types (comma-separated)
+  SEMGREP_REVIEW_LICENSES - Review license types (comma-separated)
   SEMGREP_LOG_LEVEL     - Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  SEMGREP_PER_REPOSITORY - Fetch dependencies per repository (true/false)
             """
         )
         
@@ -114,6 +118,17 @@ Environment variables:
             help="Comma-separated list of bad license types to highlight (e.g., 'GPL-3.0,AGPL-3.0')"
         )
         
+        parser.add_argument(
+            "--review-licenses",
+            help="Comma-separated list of license types to mark for review (e.g., 'MIT,Apache-2.0')"
+        )
+        
+        parser.add_argument(
+            "--per-repository",
+            action="store_true",
+            help="Fetch dependencies per repository instead of deployment-wide (can also use SEMGREP_PER_REPOSITORY env var)"
+        )
+        
         return parser
     
     def _parse_license_list(self, license_str: str) -> List[str]:
@@ -143,8 +158,16 @@ Environment variables:
         bad_licenses_str = getattr(args, 'bad_licenses', None) or os.getenv("SEMGREP_BAD_LICENSES")
         bad_license_types = self._parse_license_list(bad_licenses_str) if bad_licenses_str else None
         
+        # Handle review licenses list
+        review_licenses_str = getattr(args, 'review_licenses', None) or os.getenv("SEMGREP_REVIEW_LICENSES")
+        review_license_types = self._parse_license_list(review_licenses_str) if review_licenses_str else None
+        
         # Handle log level from environment variable
         log_level = args.log_level or os.getenv("SEMGREP_LOG_LEVEL", "INFO")
+        
+        # Handle per-repository flag from command line or environment variable
+        # per_repository = args.per_repository or os.getenv("SEMGREP_PER_REPOSITORY", "").lower() in ("true", "1", "yes", "on")
+        per_repository = True
         
         if not token:
             print("Error: SEMGREP_APP_TOKEN is required. Provide via --token or environment variable.")
@@ -167,5 +190,7 @@ Environment variables:
             log_level=log_level,
             max_retries=args.max_retries,
             timeout=args.timeout,
-            bad_license_types=bad_license_types
+            bad_license_types=bad_license_types,
+            review_license_types=review_license_types,
+            per_repository=per_repository
         )
