@@ -29,7 +29,6 @@ class TestConfig:
         assert config.deployment_slug == "test_org"
         assert config.log_level == "INFO"  # default
         assert config.max_retries == 3     # default
-        assert config.per_repository is False  # default
         assert config.bad_license_types is None  # default
         assert config.review_license_types is None  # default
     
@@ -90,7 +89,7 @@ class TestConfigManager:
         assert parser is not None
         assert "--token" in parser._option_string_actions
         assert "--deployment-id" in parser._option_string_actions
-        assert "--per-repository" in parser._option_string_actions
+        assert "--deployment-slug" in parser._option_string_actions
     
     @patch.dict(os.environ, {
         'SEMGREP_APP_TOKEN': 'env_token_123',
@@ -232,60 +231,5 @@ class TestConfigManager:
         assert config.output_path == "/custom/path.xlsx"
         assert config.max_retries == 5
         assert config.timeout == 60
-        assert config.per_repository is False  # default
+        # All other options use their defaults
     
-    @patch('sys.argv', [
-        'script.py',
-        '--token', 'test_token',
-        '--deployment-id', 'test_deployment',
-        '--deployment-slug', 'test_org',
-        '--per-repository'
-    ])
-    def test_per_repository_flag(self):
-        """Test per-repository command line flag."""
-        manager = ConfigManager()
-        config = manager.load_config()
-        
-        assert config.per_repository is True
-    
-    @patch.dict(os.environ, {
-        'SEMGREP_APP_TOKEN': 'test_token',
-        'SEMGREP_DEPLOYMENT_ID': 'test_deployment', 
-        'SEMGREP_DEPLOYMENT_SLUG': 'test_org',
-        'SEMGREP_PER_REPOSITORY': 'true'
-    })
-    @patch('sys.argv', ['script.py'])
-    def test_per_repository_env_var_true(self):
-        """Test per-repository environment variable (true)."""
-        manager = ConfigManager()
-        config = manager.load_config()
-        
-        assert config.per_repository is True
-    
-    @patch.dict(os.environ, {
-        'SEMGREP_APP_TOKEN': 'test_token',
-        'SEMGREP_DEPLOYMENT_ID': 'test_deployment',
-        'SEMGREP_DEPLOYMENT_SLUG': 'test_org', 
-        'SEMGREP_PER_REPOSITORY': 'false'
-    })
-    @patch('sys.argv', ['script.py'])
-    def test_per_repository_env_var_false(self):
-        """Test per-repository environment variable (false)."""
-        manager = ConfigManager()
-        config = manager.load_config()
-        
-        assert config.per_repository is False
-    
-    @patch.dict(os.environ, {
-        'SEMGREP_APP_TOKEN': 'test_token',
-        'SEMGREP_DEPLOYMENT_ID': 'test_deployment',
-        'SEMGREP_DEPLOYMENT_SLUG': 'test_org',
-        'SEMGREP_PER_REPOSITORY': '1'
-    })
-    @patch('sys.argv', ['script.py'])
-    def test_per_repository_env_var_numeric(self):
-        """Test per-repository environment variable (numeric)."""
-        manager = ConfigManager()
-        config = manager.load_config()
-        
-        assert config.per_repository is True

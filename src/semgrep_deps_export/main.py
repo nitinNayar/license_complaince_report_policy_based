@@ -37,7 +37,7 @@ class SemgrepDepsExporter:
         logger.info("Starting Semgrep Dependencies Export")
         logger.info(f"Deployment ID: {self.config.deployment_id}")
         logger.info(f"Log Level: {self.config.log_level}")
-        logger.info(f"Fetch Mode: {'Per-Repository' if self.config.per_repository else 'Deployment-Wide'}")
+        logger.info("Fetch Mode: Per-Repository")
         
         try:
             # Step 1: Test API connection
@@ -61,14 +61,9 @@ class SemgrepDepsExporter:
             
             # Step 3: Fetch all dependencies
             with error_context("Fetching dependencies from API"):
-                if self.config.per_repository:
-                    logger.info("Using per-repository dependency fetching mode")
-                    dependencies_iterator = self.api_client.get_all_dependencies_by_repository()
-                    logger.info("✓ Starting per-repository dependency retrieval")
-                else:
-                    logger.info("Using deployment-wide dependency fetching mode")
-                    dependencies_iterator = self.api_client.get_all_dependencies()
-                    logger.info("✓ Starting deployment-wide dependency retrieval")
+                logger.info("Using per-repository dependency fetching mode")
+                dependencies_iterator = self.api_client.get_all_dependencies_by_repository()
+                logger.info("✓ Starting per-repository dependency retrieval")
             
             # Step 4: Process dependencies
             with error_context("Processing dependency data"):
@@ -97,10 +92,151 @@ class SemgrepDepsExporter:
                 )
                 logger.info(f"✓ Excel export completed: {output_path}")
             
+            # Step 7: Export filtered data (bad/review licenses) to separate Excel file
+            with error_context("Exporting filtered dependencies"):
+                filtered_output_path = self.excel_exporter.export_filtered(
+                    processed_dependencies,
+                    processed_vulnerabilities,
+                    summary
+                )
+                if filtered_output_path:
+                    logger.info(f"✓ Filtered Excel export completed: {filtered_output_path}")
+                else:
+                    logger.info("✓ No dependencies with bad/review licenses found")
+            
+            # Step 8: Conditionally export LICENSE_POLICY_SETTING_BLOCK dependencies
+            policy_blocked_output_path = None
+            if self.config.policy_licenses_block:
+                with error_context("Exporting LICENSE_POLICY_SETTING_BLOCK dependencies"):
+                    logger.info("LICENSE_POLICY_SETTING_BLOCK export enabled, fetching policy blocked dependencies...")
+                    
+                    # Fetch dependencies with LICENSE_POLICY_SETTING_BLOCK
+                    blocked_dependencies_iterator = self.api_client.get_all_dependencies_by_policy("LICENSE_POLICY_SETTING_BLOCK")
+                    
+                    # Reset processor state to prevent data accumulation from main export
+                    self.data_processor.reset_state()
+                    
+                    # Process the policy blocked dependencies
+                    processed_blocked_dependencies, processed_blocked_vulnerabilities = self.data_processor.process_all_dependencies(
+                        blocked_dependencies_iterator
+                    )
+                    
+                    logger.info(f"✓ Processed {len(processed_blocked_dependencies)} policy blocked dependencies")
+                    
+                    # Validate policy blocked filtering worked correctly
+                    if len(processed_blocked_dependencies) > 1000:  # Threshold check - should be much smaller subset
+                        logger.warning(f"VALIDATION WARNING: Policy blocked export has {len(processed_blocked_dependencies)} dependencies")
+                        logger.warning("This seems high for LICENSE_POLICY_SETTING_BLOCK filtering - may include mixed data")
+                    else:
+                        logger.info(f"✓ Validation passed: Policy blocked export contains reasonable count of {len(processed_blocked_dependencies)} dependencies")
+                    
+                    # Export policy blocked dependencies
+                    policy_blocked_output_path = self.excel_exporter.export_policy_blocked(
+                        processed_blocked_dependencies,
+                        processed_blocked_vulnerabilities
+                    )
+                    
+                    if policy_blocked_output_path:
+                        logger.info(f"✓ Policy blocked Excel export completed: {policy_blocked_output_path}")
+                    else:
+                        logger.info("✓ No dependencies with LICENSE_POLICY_SETTING_BLOCK found")
+            
+            # Step 9: Conditionally export LICENSE_POLICY_SETTING_COMMENT dependencies
+            policy_comment_output_path = None
+            if self.config.policy_licenses_comment:
+                with error_context("Exporting LICENSE_POLICY_SETTING_COMMENT dependencies"):
+                    logger.info("LICENSE_POLICY_SETTING_COMMENT export enabled, fetching policy comment dependencies...")
+                    
+                    # Fetch dependencies with LICENSE_POLICY_SETTING_COMMENT
+                    comment_dependencies_iterator = self.api_client.get_all_dependencies_by_policy("LICENSE_POLICY_SETTING_COMMENT")
+                    
+                    # Reset processor state to prevent data accumulation from previous exports
+                    self.data_processor.reset_state()
+                    
+                    # Process the policy comment dependencies
+                    processed_comment_dependencies, processed_comment_vulnerabilities = self.data_processor.process_all_dependencies(
+                        comment_dependencies_iterator
+                    )
+                    
+                    logger.info(f"✓ Processed {len(processed_comment_dependencies)} policy comment dependencies")
+                    
+                    # Validate policy comment filtering worked correctly
+                    if len(processed_comment_dependencies) > 2000:  # Threshold check - should be much smaller subset
+                        logger.warning(f"VALIDATION WARNING: Policy comment export has {len(processed_comment_dependencies)} dependencies")
+                        logger.warning("This seems high for LICENSE_POLICY_SETTING_COMMENT filtering - may include mixed data")
+                    else:
+                        logger.info(f"✓ Validation passed: Policy comment export contains reasonable count of {len(processed_comment_dependencies)} dependencies")
+                    
+                    # Export policy comment dependencies
+                    policy_comment_output_path = self.excel_exporter.export_policy_comment(
+                        processed_comment_dependencies,
+                        processed_comment_vulnerabilities
+                    )
+                    
+                    if policy_comment_output_path:
+                        logger.info(f"✓ Policy comment Excel export completed: {policy_comment_output_path}")
+                    else:
+                        logger.info("✓ No dependencies with LICENSE_POLICY_SETTING_COMMENT found")
+            
+            # Step 10: Conditionally export PyPI ecosystem dependencies
+            ecosystem_pypi_output_path = None
+            if self.config.ecosystem_pypi:
+                with error_context("Exporting PyPI ecosystem dependencies"):
+                    logger.info("PyPI ecosystem export enabled, fetching PyPI ecosystem dependencies...")
+                    
+                    try:
+                        # Fetch dependencies with ecosystem: pypi
+                        pypi_dependencies_iterator = self.api_client.get_all_dependencies_by_ecosystem("pypi")
+                        
+                        # Reset processor state to prevent data accumulation from main export
+                        self.data_processor.reset_state()
+                        
+                        # Process the PyPI ecosystem dependencies
+                        processed_pypi_dependencies, processed_pypi_vulnerabilities = self.data_processor.process_all_dependencies(
+                            pypi_dependencies_iterator
+                        )
+                        
+                        logger.info(f"✓ Processed {len(processed_pypi_dependencies)} PyPI ecosystem dependencies")
+                        
+                        # Validate that all dependencies are actually from PyPI ecosystem
+                        non_pypi_deps = [dep for dep in processed_pypi_dependencies if dep.ecosystem.lower() != "pypi"]
+                        if non_pypi_deps:
+                            logger.error(f"VALIDATION ERROR: Found {len(non_pypi_deps)} non-PyPI dependencies in ecosystem export!")
+                            logger.error(f"Non-PyPI ecosystems found: {set(dep.ecosystem for dep in non_pypi_deps[:5])}")
+                            logger.warning("Ecosystem filtering may not be working correctly")
+                        else:
+                            logger.info(f"✓ Validation passed: All {len(processed_pypi_dependencies)} dependencies are PyPI ecosystem")
+                        
+                        if processed_pypi_dependencies:
+                            # Export PyPI ecosystem dependencies
+                            ecosystem_pypi_output_path = self.excel_exporter.export_ecosystem_pypi(
+                                processed_pypi_dependencies,
+                                processed_pypi_vulnerabilities
+                            )
+                            
+                            if ecosystem_pypi_output_path:
+                                logger.info(f"✓ PyPI ecosystem Excel export completed: {ecosystem_pypi_output_path}")
+                            else:
+                                logger.info("✓ No PyPI ecosystem dependencies found")
+                        else:
+                            logger.info("✓ No PyPI ecosystem dependencies found (API may not support ecosystem filtering)")
+                            
+                    except Exception as e:
+                        logger.warning(f"PyPI ecosystem export failed: {str(e)}")
+                        logger.info("✓ Continuing without PyPI ecosystem export")
+            
             # Final success message
             logger.info("=" * 60)
             logger.info("EXPORT COMPLETED SUCCESSFULLY")
             logger.info(f"Output file: {output_path}")
+            if filtered_output_path:
+                logger.info(f"Filtered output file: {filtered_output_path}")
+            if policy_blocked_output_path:
+                logger.info(f"Policy blocked output file: {policy_blocked_output_path}")
+            if policy_comment_output_path:
+                logger.info(f"Policy comment output file: {policy_comment_output_path}")
+            if ecosystem_pypi_output_path:
+                logger.info(f"PyPI ecosystem output file: {ecosystem_pypi_output_path}")
             logger.info(f"Dependencies: {len(processed_dependencies)}")
             logger.info(f"Vulnerabilities: {len(processed_vulnerabilities)}")
             logger.info("=" * 60)

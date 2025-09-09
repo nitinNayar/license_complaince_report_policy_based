@@ -84,6 +84,16 @@ class DataProcessor:
             "transformation_errors": 0
         }
     
+    def reset_state(self) -> None:
+        """Reset processor state to prevent data accumulation across multiple calls."""
+        self.processed_dependencies = []
+        self.processed_vulnerabilities = []
+        self.processing_stats = {
+            "total_processed": 0,
+            "validation_errors": 0,
+            "transformation_errors": 0
+        }
+    
     def _get_repository_name(self, repository_id: str) -> str:
         """Get repository name from ID, with fallback."""
         if not repository_id:

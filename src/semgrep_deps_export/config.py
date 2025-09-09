@@ -18,7 +18,7 @@ class Config:
     
     token: str
     deployment_id: str
-    deployment_slug: str
+    deployment_slug: Optional[str] = None
     output_path: Optional[str] = None
     output_dir: Optional[str] = None
     log_level: str = "INFO"
@@ -26,7 +26,9 @@ class Config:
     timeout: int = 30
     bad_license_types: Optional[List[str]] = None
     review_license_types: Optional[List[str]] = None
-    per_repository: bool = False
+    policy_licenses_block: bool = False
+    policy_licenses_comment: bool = False
+    ecosystem_pypi: bool = False
     
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -34,8 +36,7 @@ class Config:
             raise ValueError("SEMGREP_APP_TOKEN is required")
         if not self.deployment_id:
             raise ValueError("deployment_id is required")
-        if not self.deployment_slug:
-            raise ValueError("deployment_slug is required")
+        # deployment_slug is optional but recommended for repository name resolution
 
 
 class ConfigManager:
@@ -62,8 +63,10 @@ Environment variables:
   SEMGREP_OUTPUT_DIR    - Output directory
   SEMGREP_BAD_LICENSES  - Bad license types (comma-separated)
   SEMGREP_REVIEW_LICENSES - Review license types (comma-separated)
+  SEMGREP_POLICY_LICENSES_BLOCK - Generate report for LICENSE_POLICY_SETTING_BLOCK (true/false)
+  SEMGREP_POLICY_LICENSES_COMMENT - Generate report for LICENSE_POLICY_SETTING_COMMENT (true/false)
+  SEMGREP_ECOSYSTEM_PYPI - Generate report for PyPI ecosystem dependencies (true/false)
   SEMGREP_LOG_LEVEL     - Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-  SEMGREP_PER_REPOSITORY - Fetch dependencies per repository (true/false)
             """
         )
         
@@ -123,11 +126,6 @@ Environment variables:
             help="Comma-separated list of license types to mark for review (e.g., 'MIT,Apache-2.0')"
         )
         
-        parser.add_argument(
-            "--per-repository",
-            action="store_true",
-            help="Fetch dependencies per repository instead of deployment-wide (can also use SEMGREP_PER_REPOSITORY env var)"
-        )
         
         return parser
     
@@ -165,9 +163,12 @@ Environment variables:
         # Handle log level from environment variable
         log_level = args.log_level or os.getenv("SEMGREP_LOG_LEVEL", "INFO")
         
-        # Handle per-repository flag from command line or environment variable
-        # per_repository = args.per_repository or os.getenv("SEMGREP_PER_REPOSITORY", "").lower() in ("true", "1", "yes", "on")
-        per_repository = True
+        # Handle policy license settings
+        policy_licenses_block = os.getenv("SEMGREP_POLICY_LICENSES_BLOCK", "").lower() in ("true", "1", "yes", "on")
+        policy_licenses_comment = os.getenv("SEMGREP_POLICY_LICENSES_COMMENT", "").lower() in ("true", "1", "yes", "on")
+        
+        # Handle ecosystem filtering settings
+        ecosystem_pypi = os.getenv("SEMGREP_ECOSYSTEM_PYPI", "").lower() in ("true", "1", "yes", "on")
         
         if not token:
             print("Error: SEMGREP_APP_TOKEN is required. Provide via --token or environment variable.")
@@ -178,8 +179,7 @@ Environment variables:
             sys.exit(1)
             
         if not deployment_slug:
-            print("Error: deployment_slug is required. Provide via --deployment-slug or environment variable.")
-            sys.exit(1)
+            print("Warning: deployment_slug not provided. Repository names will fallback to 'Repo-{ID}' format.")
         
         return Config(
             token=token,
@@ -192,5 +192,7 @@ Environment variables:
             timeout=args.timeout,
             bad_license_types=bad_license_types,
             review_license_types=review_license_types,
-            per_repository=per_repository
+            policy_licenses_block=policy_licenses_block,
+            policy_licenses_comment=policy_licenses_comment,
+            ecosystem_pypi=ecosystem_pypi
         )

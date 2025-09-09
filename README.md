@@ -7,7 +7,9 @@ A Python tool that exports Semgrep Supply Chain dependencies to Excel with licen
 - **Repository Name Resolution**: Shows readable repository names instead of numeric IDs
 - **License Compliance**: Flags problematic licenses (GPL, AGPL, Commercial) with red highlighting
 - **Review License Tracking**: Marks licenses requiring review with yellow highlighting
-- **Excel Export**: Clean 9-column reports optimized for compliance teams
+- **Policy-Based Filtering**: Generate separate reports for LICENSE_POLICY_SETTING_BLOCK and LICENSE_POLICY_SETTING_COMMENT dependencies
+- **Ecosystem Filtering**: Create targeted reports for specific package ecosystems (PyPI, npm, etc.)
+- **Excel Export**: Clean reports optimized for compliance teams with multiple output formats
 - **Dual Logging**: Console output with automatic file logging
 - **Flexible Configuration**: CLI arguments, environment variables, and .env file support
 
@@ -21,8 +23,8 @@ A Python tool that exports Semgrep Supply Chain dependencies to Excel with licen
 
 1. **Clone and install**:
    ```bash
-   git clone https://github.com/nitinNayar/license_compliance_report.git
-   cd license_compliance_report
+   git clone https://github.com/nitinNayar/license_complaince_report_policy_based.git
+   cd license_complaince_report_policy_based
    pip install -r requirements.txt
    ```
 
@@ -42,11 +44,21 @@ A Python tool that exports Semgrep Supply Chain dependencies to Excel with licen
 ### Environment Variables (.env file)
 
 ```bash
+# Required Configuration
 SEMGREP_APP_TOKEN=your_api_token_here
 SEMGREP_DEPLOYMENT_ID=your_deployment_id_here
 SEMGREP_DEPLOYMENT_SLUG=your_deployment_slug_here
+
+# License Classification (Optional)
 SEMGREP_BAD_LICENSES=GPL-3.0,AGPL-3.0,Commercial,Proprietary
 SEMGREP_REVIEW_LICENSES=MIT,Apache-2.0,BSD-2-Clause
+
+# Policy-Based Filtering (Optional)
+SEMGREP_POLICY_LICENSES_BLOCK=true     # Generate report for blocked license dependencies
+SEMGREP_POLICY_LICENSES_COMMENT=true   # Generate report for comment license dependencies
+
+# Ecosystem Filtering (Optional)
+SEMGREP_ECOSYSTEM_PYPI=true            # Generate report for PyPI ecosystem dependencies
 ```
 
 ### Command Line Options
@@ -103,23 +115,123 @@ SEMGREP_BAD_LICENSES=GPL-3.0,AGPL-3.0,LGPL-2.1,Commercial,Proprietary
 SEMGREP_REVIEW_LICENSES=MIT,Apache-2.0,BSD-2-Clause
 ```
 
-## Examples
+## Policy-Based Filtering
+
+The tool supports generating separate Excel reports based on Semgrep license policy settings. This enables focused compliance analysis for different license policy categories.
+
+### Available Policy Filters
+
+#### LICENSE_POLICY_SETTING_BLOCK
+Generate a report containing only dependencies with the `LICENSE_POLICY_SETTING_BLOCK` policy setting. These are typically dependencies with licenses that are blocked by your organization's policy.
 
 ```bash
-# Basic usage with .env file
+SEMGREP_POLICY_LICENSES_BLOCK=true
+```
+
+**Output**: `policy_blocked_semgrep_dependencies_<deployment_id>_<timestamp>.xlsx`
+
+#### LICENSE_POLICY_SETTING_COMMENT  
+Generate a report containing only dependencies with the `LICENSE_POLICY_SETTING_COMMENT` policy setting. These are dependencies that require additional review or comments.
+
+```bash
+SEMGREP_POLICY_LICENSES_COMMENT=true
+```
+
+**Output**: `policy_comment_semgrep_dependencies_<deployment_id>_<timestamp>.xlsx`
+
+### Policy Report Format
+
+Policy-based reports use a clean 7-column format (no license classification columns):
+
+| Column | Description |
+|--------|-------------|
+| **Repository Name** | Human-readable repository name |
+| **Name** | Package name |
+| **Version** | Package version |
+| **Ecosystem** | Package ecosystem |
+| **Package Manager** | Package manager |
+| **Transitivity** | DIRECT or TRANSITIVE |
+| **Licenses** | License names |
+
+**Key Features**:
+- ✅ **No color coding** - Clean format for policy review
+- ✅ **No bad/review license columns** - Focused on policy classification
+- ✅ **Separate files** - Each policy type gets its own Excel file
+- ✅ **Filtered data** - Contains only dependencies matching the policy
+
+### Ecosystem Filtering
+
+Generate reports for specific package ecosystems:
+
+```bash
+SEMGREP_ECOSYSTEM_PYPI=true        # Python packages (PyPI)
+# More ecosystems coming soon: npm, Maven, etc.
+```
+
+**Output**: `ecosystem_pypi_semgrep_dependencies_<deployment_id>_<timestamp>.xlsx`
+
+## Examples
+
+### Basic Usage
+
+```bash
+# Standard export with license analysis
 python src/semgrep_deps_export.py
 
-# Command line with custom output
-python src/semgrep_deps_export.py \
-  --deployment-id deploy-123 \
-  --deployment-slug my-org \
-  --output-dir ./custom-reports
+# With custom output directory
+python src/semgrep_deps_export.py --output-dir ./compliance-reports
+```
 
-# Debug mode with specific bad and review licenses
+### Policy-Based Filtering
+
+```bash
+# Generate reports for blocked license dependencies only
+SEMGREP_POLICY_LICENSES_BLOCK=true python src/semgrep_deps_export.py
+
+# Generate reports for comment license dependencies only  
+SEMGREP_POLICY_LICENSES_COMMENT=true python src/semgrep_deps_export.py
+
+# Generate both policy reports
+SEMGREP_POLICY_LICENSES_BLOCK=true SEMGREP_POLICY_LICENSES_COMMENT=true python src/semgrep_deps_export.py
+```
+
+### Ecosystem Filtering
+
+```bash
+# Generate PyPI ecosystem report only
+SEMGREP_ECOSYSTEM_PYPI=true python src/semgrep_deps_export.py
+
+# Combine ecosystem and policy filtering
+SEMGREP_ECOSYSTEM_PYPI=true SEMGREP_POLICY_LICENSES_BLOCK=true python src/semgrep_deps_export.py
+```
+
+### Advanced Usage
+
+```bash
+# All filtering options enabled
+SEMGREP_POLICY_LICENSES_BLOCK=true \
+SEMGREP_POLICY_LICENSES_COMMENT=true \
+SEMGREP_ECOSYSTEM_PYPI=true \
+python src/semgrep_deps_export.py
+
+# Debug mode with custom licenses
 python src/semgrep_deps_export.py \
   --log-level DEBUG \
   --bad-licenses "GPL-3.0,AGPL-3.0,Commercial" \
   --review-licenses "MIT,Apache-2.0"
+```
+
+### Generated Files
+
+When filtering is enabled, you'll get multiple output files:
+
+```
+./reports/
+├── semgrep_dependencies_37285_20240909_120000.xlsx              # Main report (all deps)
+├── bad_review_license_semgrep_dependencies_37285_20240909_120005.xlsx  # Flagged licenses
+├── policy_blocked_semgrep_dependencies_37285_20240909_120010.xlsx      # Policy blocked
+├── policy_comment_semgrep_dependencies_37285_20240909_120015.xlsx      # Policy comment
+└── ecosystem_pypi_semgrep_dependencies_37285_20240909_120020.xlsx      # PyPI ecosystem
 ```
 
 ## Troubleshooting
@@ -132,8 +244,29 @@ python src/semgrep_deps_export.py \
 - Ensure `DEPLOYMENT_SLUG` is correct (different from deployment ID)
 - Tool will fallback to "Repo-{ID}" format if Projects API fails
 
+**Policy Filtering Issues**:
+- Ensure your Semgrep deployment has license policies configured
+- Policy reports will be empty if no dependencies match the policy settings
+- Check validation messages in the logs for data integrity issues
+
+**Ecosystem Filtering Issues**:
+- Currently only PyPI ecosystem filtering is supported
+- Ecosystem reports will be empty if no dependencies match the specified ecosystem
+- Check API logs for ecosystem filter compatibility
+
+**Empty Reports**:
+- Policy blocked/comment reports are empty → No dependencies match those policy settings
+- Ecosystem reports are empty → No dependencies from that ecosystem found
+- Check the main report first to verify dependencies are being processed
+
 **Debug Mode**:
 ```bash
 python src/semgrep_deps_export.py --log-level DEBUG
 ```
+
+**Validation Checks**:
+The tool includes built-in validation to ensure data integrity:
+- Policy reports should contain reasonable dependency counts (< 1000-2000)
+- Ecosystem reports should contain only dependencies from the specified ecosystem
+- Warning messages will appear if validation fails
 

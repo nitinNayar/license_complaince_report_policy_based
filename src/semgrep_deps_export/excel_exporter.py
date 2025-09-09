@@ -74,24 +74,87 @@ class ExcelExporter:
         
         return os.path.join(output_dir, filename)
     
-    def _create_dependencies_sheet(self, dependencies: List[ProcessedDependency]) -> Worksheet:
+    def _generate_filtered_filename(self) -> str:
+        """Generate filename for filtered dependencies with bad/review licenses."""        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"bad_review_license_semgrep_dependencies_{self.config.deployment_id}_{timestamp}.xlsx"
+        
+        # Use output directory if specified, otherwise use 'output' directory
+        if self.config.output_dir:
+            output_dir = self.config.output_dir
+        else:
+            output_dir = os.path.join(os.getcwd(), "output")
+        
+        return os.path.join(output_dir, filename)
+    
+    def _generate_policy_blocked_filename(self) -> str:
+        """Generate filename for LICENSE_POLICY_SETTING_BLOCK dependencies."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"policy_blocked_semgrep_dependencies_{self.config.deployment_id}_{timestamp}.xlsx"
+        
+        # Use output directory if specified, otherwise use 'output' directory
+        if self.config.output_dir:
+            output_dir = self.config.output_dir
+        else:
+            output_dir = os.path.join(os.getcwd(), "output")
+        
+        return os.path.join(output_dir, filename)
+    
+    def _generate_policy_comment_filename(self) -> str:
+        """Generate filename for LICENSE_POLICY_SETTING_COMMENT dependencies."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"policy_comment_semgrep_dependencies_{self.config.deployment_id}_{timestamp}.xlsx"
+        
+        # Use output directory if specified, otherwise use 'output' directory
+        if self.config.output_dir:
+            output_dir = self.config.output_dir
+        else:
+            output_dir = os.path.join(os.getcwd(), "output")
+        
+        return os.path.join(output_dir, filename)
+    
+    def _generate_ecosystem_pypi_filename(self) -> str:
+        """Generate filename for PyPI ecosystem dependencies."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"ecosystem_pypi_semgrep_dependencies_{self.config.deployment_id}_{timestamp}.xlsx"
+        
+        # Use output directory if specified, otherwise use 'output' directory
+        if self.config.output_dir:
+            output_dir = self.config.output_dir
+        else:
+            output_dir = os.path.join(os.getcwd(), "output")
+        
+        return os.path.join(output_dir, filename)
+    
+    def _create_dependencies_sheet(self, dependencies: List[ProcessedDependency], include_license_columns: bool = True, apply_license_coloring: bool = True) -> Worksheet:
         """Create the Dependencies worksheet."""
         logger.info("Creating Dependencies sheet...")
         
         ws = self.workbook.create_sheet("Dependencies")
         
-        # Define headers
-        headers = [
-            "Repository Name",
-            "Name",
-            "Version",
-            "Ecosystem",
-            "Package Manager",
-            "Transitivity",
-            "Bad_License",
-            "Review_License",
-            "Licenses"
-        ]
+        # Define headers based on whether to include license columns
+        if include_license_columns:
+            headers = [
+                "Repository Name",
+                "Name",
+                "Version",
+                "Ecosystem",
+                "Package Manager",
+                "Transitivity",
+                "Bad_License",
+                "Review_License",
+                "Licenses"
+            ]
+        else:
+            headers = [
+                "Repository Name",
+                "Name",
+                "Version",
+                "Ecosystem",
+                "Package Manager",
+                "Transitivity",
+                "Licenses"
+            ]
         
         # Set headers
         for col, header in enumerate(headers, 1):
@@ -110,9 +173,13 @@ class ExcelExporter:
             ws.cell(row=row, column=4, value=dep.ecosystem)
             ws.cell(row=row, column=5, value=dep.package_manager)
             ws.cell(row=row, column=6, value=dep.transitivity)
-            ws.cell(row=row, column=7, value=dep.bad_license)
-            ws.cell(row=row, column=8, value=dep.review_license)
-            ws.cell(row=row, column=9, value=dep.licenses)
+            
+            if include_license_columns:
+                ws.cell(row=row, column=7, value=dep.bad_license)
+                ws.cell(row=row, column=8, value=dep.review_license)
+                ws.cell(row=row, column=9, value=dep.licenses)
+            else:
+                ws.cell(row=row, column=7, value=dep.licenses)
             
             # Apply styles to data cells
             for col in range(1, len(headers) + 1):
@@ -122,16 +189,17 @@ class ExcelExporter:
                 # All columns use left alignment now (no number columns remaining)
                 cell.alignment = self.cell_alignment
             
-            # Apply highlighting for license types
-            if dep.bad_license and dep.review_license:
-                # Both bad and review licenses - use combined formatting
-                self._apply_dual_license_formatting(ws, row, len(headers))
-            elif dep.bad_license:
-                # Bad license only - red highlighting
-                self._apply_bad_license_formatting(ws, row, len(headers))
-            elif dep.review_license:
-                # Review license only - yellow highlighting
-                self._apply_review_license_formatting(ws, row, len(headers))
+            # Apply highlighting for license types only if enabled and license columns are included
+            if apply_license_coloring and include_license_columns:
+                if dep.bad_license and dep.review_license:
+                    # Both bad and review licenses - use combined formatting
+                    self._apply_dual_license_formatting(ws, row, len(headers))
+                elif dep.bad_license:
+                    # Bad license only - red highlighting
+                    self._apply_bad_license_formatting(ws, row, len(headers))
+                elif dep.review_license:
+                    # Review license only - yellow highlighting
+                    self._apply_review_license_formatting(ws, row, len(headers))
         
         # Auto-adjust column widths
         for col in range(1, len(headers) + 1):
@@ -383,6 +451,250 @@ class ExcelExporter:
         except Exception as e:
             logger.error(f"Failed to export Excel file: {str(e)}")
             raise Exception(f"Excel export failed: {str(e)}")
+
+    def export_filtered(self, dependencies: List[ProcessedDependency], vulnerabilities: List[ProcessedVulnerability], summary: Dict[str, Any]) -> Optional[str]:
+        """Export filtered data (bad_license OR review_license == True) to separate Excel file."""
+        # Filter dependencies to only those with bad or review licenses
+        filtered_dependencies = [dep for dep in dependencies if dep.bad_license or dep.review_license]
+        
+        # If no problematic dependencies found, skip creating filtered file
+        if not filtered_dependencies:
+            logger.info("No dependencies with bad or review licenses found, skipping filtered export")
+            return None
+            
+        # Filter vulnerabilities to only those associated with filtered dependencies
+        filtered_dep_names = {f"{dep.name}:{dep.version}" for dep in filtered_dependencies}
+        filtered_vulnerabilities = [
+            vuln for vuln in vulnerabilities 
+            if f"{vuln.dependency_name}:{vuln.dependency_version}" in filtered_dep_names
+        ]
+        
+        # Create new workbook for filtered export
+        filtered_workbook = Workbook()
+        filtered_workbook.remove(filtered_workbook.active)  # Remove default sheet
+        original_workbook = self.workbook  # Store original workbook
+        
+        try:
+            # Temporarily use filtered workbook
+            self.workbook = filtered_workbook
+            
+            output_path = self._generate_filtered_filename()
+            logger.info(f"Starting filtered Excel export to {output_path}")
+            logger.info(f"  - Filtered dependencies: {len(filtered_dependencies)} (from {len(dependencies)} total)")
+            logger.info(f"  - Filtered vulnerabilities: {len(filtered_vulnerabilities)} (from {len(vulnerabilities)} total)")
+            
+            # Create sheets with filtered data
+            self._create_dependencies_sheet(filtered_dependencies)
+            
+            if filtered_vulnerabilities:
+                self._create_vulnerabilities_sheet(filtered_vulnerabilities)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Save filtered workbook
+            self.workbook.save(output_path)
+            
+            # Get file size for logging
+            file_size = os.path.getsize(output_path)
+            file_size_mb = file_size / (1024 * 1024)
+            
+            logger.info(f"Filtered Excel export completed successfully:")
+            logger.info(f"  - File: {output_path}")
+            logger.info(f"  - Size: {file_size_mb:.2f} MB")
+            logger.info(f"  - Sheets: Dependencies" + (", Vulnerabilities" if filtered_vulnerabilities else ""))
+            
+            return output_path
+            
+        except Exception as e:
+            logger.error(f"Failed to export filtered Excel file: {str(e)}")
+            raise Exception(f"Filtered Excel export failed: {str(e)}")
+            
+        finally:
+            # Restore original workbook
+            self.workbook = original_workbook
+    
+    def export_policy_blocked(self, dependencies: List[ProcessedDependency], vulnerabilities: List[ProcessedVulnerability]) -> Optional[str]:
+        """Export dependencies with LICENSE_POLICY_SETTING_BLOCK to separate Excel file."""
+        if not dependencies:
+            logger.info("No dependencies with LICENSE_POLICY_SETTING_BLOCK found, skipping blocked policy export")
+            return None
+            
+        # Filter vulnerabilities to only those associated with policy blocked dependencies
+        blocked_dep_names = {f"{dep.name}:{dep.version}" for dep in dependencies}
+        filtered_vulnerabilities = [
+            vuln for vuln in vulnerabilities 
+            if f"{vuln.dependency_name}:{vuln.dependency_version}" in blocked_dep_names
+        ]
+        
+        # Create new workbook for policy blocked export
+        blocked_workbook = Workbook()
+        blocked_workbook.remove(blocked_workbook.active)  # Remove default sheet
+        original_workbook = self.workbook  # Store original workbook
+        
+        try:
+            # Temporarily use blocked workbook
+            self.workbook = blocked_workbook
+            
+            output_path = self._generate_policy_blocked_filename()
+            logger.info(f"Starting LICENSE_POLICY_SETTING_BLOCK Excel export to {output_path}")
+            logger.info(f"  - Policy blocked dependencies: {len(dependencies)}")
+            logger.info(f"  - Associated vulnerabilities: {len(filtered_vulnerabilities)}")
+            
+            # Create sheets with policy blocked data (no license columns, no coloring)
+            self._create_dependencies_sheet(dependencies, include_license_columns=False, apply_license_coloring=False)
+            
+            if filtered_vulnerabilities:
+                self._create_vulnerabilities_sheet(filtered_vulnerabilities)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Save blocked workbook
+            self.workbook.save(output_path)
+            
+            # Get file size for logging
+            file_size = os.path.getsize(output_path)
+            file_size_mb = file_size / (1024 * 1024)
+            
+            logger.info(f"Policy blocked Excel export completed successfully:")
+            logger.info(f"  - File: {output_path}")
+            logger.info(f"  - Size: {file_size_mb:.2f} MB")
+            logger.info(f"  - Sheets: Dependencies" + (", Vulnerabilities" if filtered_vulnerabilities else ""))
+            
+            return output_path
+            
+        except Exception as e:
+            logger.error(f"Failed to export policy blocked Excel file: {str(e)}")
+            raise Exception(f"Policy blocked Excel export failed: {str(e)}")
+            
+        finally:
+            # Restore original workbook
+            self.workbook = original_workbook
+
+    def export_policy_comment(self, dependencies: List[ProcessedDependency], vulnerabilities: List[ProcessedVulnerability]) -> Optional[str]:
+        """Export dependencies with LICENSE_POLICY_SETTING_COMMENT to separate Excel file."""
+        if not dependencies:
+            logger.info("No dependencies with LICENSE_POLICY_SETTING_COMMENT found, skipping comment policy export")
+            return None
+            
+        # Filter vulnerabilities to only those associated with policy comment dependencies
+        comment_dep_names = {f"{dep.name}:{dep.version}" for dep in dependencies}
+        filtered_vulnerabilities = [
+            vuln for vuln in vulnerabilities 
+            if f"{vuln.dependency_name}:{vuln.dependency_version}" in comment_dep_names
+        ]
+        
+        # Create new workbook for policy comment export
+        comment_workbook = Workbook()
+        comment_workbook.remove(comment_workbook.active)  # Remove default sheet
+        original_workbook = self.workbook  # Store original workbook
+        
+        try:
+            # Temporarily use comment workbook
+            self.workbook = comment_workbook
+            
+            output_path = self._generate_policy_comment_filename()
+            logger.info(f"Starting LICENSE_POLICY_SETTING_COMMENT Excel export to {output_path}")
+            logger.info(f"  - Policy comment dependencies: {len(dependencies)}")
+            logger.info(f"  - Associated vulnerabilities: {len(filtered_vulnerabilities)}")
+            
+            # Create sheets with policy comment data (no license columns, no coloring)
+            self._create_dependencies_sheet(dependencies, include_license_columns=False, apply_license_coloring=False)
+            
+            if filtered_vulnerabilities:
+                self._create_vulnerabilities_sheet(filtered_vulnerabilities)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Save comment workbook
+            self.workbook.save(output_path)
+            
+            # Get file size for logging
+            file_size = os.path.getsize(output_path)
+            file_size_mb = file_size / (1024 * 1024)
+            
+            logger.info(f"Policy comment Excel export completed successfully:")
+            logger.info(f"  - File: {output_path}")
+            logger.info(f"  - Size: {file_size_mb:.2f} MB")
+            logger.info(f"  - Sheets: Dependencies" + (", Vulnerabilities" if filtered_vulnerabilities else ""))
+            
+            return output_path
+            
+        except Exception as e:
+            logger.error(f"Failed to export policy comment Excel file: {str(e)}")
+            raise Exception(f"Policy comment Excel export failed: {str(e)}")
+            
+        finally:
+            # Restore original workbook
+            self.workbook = original_workbook
+
+    def export_ecosystem_pypi(self, dependencies: List[ProcessedDependency], vulnerabilities: List[ProcessedVulnerability]) -> Optional[str]:
+        """Export PyPI ecosystem dependencies to separate Excel file."""
+        if not dependencies:
+            logger.info("No PyPI ecosystem dependencies found, skipping ecosystem export")
+            return None
+            
+        # Filter vulnerabilities to only those associated with PyPI ecosystem dependencies
+        pypi_dep_names = {f"{dep.name}:{dep.version}" for dep in dependencies}
+        filtered_vulnerabilities = [
+            vuln for vuln in vulnerabilities 
+            if f"{vuln.dependency_name}:{vuln.dependency_version}" in pypi_dep_names
+        ]
+        
+        # Create new workbook for ecosystem export
+        ecosystem_workbook = Workbook()
+        ecosystem_workbook.remove(ecosystem_workbook.active)  # Remove default sheet
+        original_workbook = self.workbook  # Store original workbook
+        
+        try:
+            # Temporarily use ecosystem workbook
+            self.workbook = ecosystem_workbook
+            
+            output_path = self._generate_ecosystem_pypi_filename()
+            logger.info(f"Starting PyPI ecosystem Excel export to {output_path}")
+            logger.info(f"  - PyPI ecosystem dependencies: {len(dependencies)}")
+            logger.info(f"  - Associated vulnerabilities: {len(filtered_vulnerabilities)}")
+            
+            # Create sheets with ecosystem data (no license columns, no coloring)
+            self._create_dependencies_sheet(dependencies, include_license_columns=False, apply_license_coloring=False)
+            
+            if filtered_vulnerabilities:
+                self._create_vulnerabilities_sheet(filtered_vulnerabilities)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Save ecosystem workbook
+            self.workbook.save(output_path)
+            
+            # Get file size for logging
+            file_size = os.path.getsize(output_path)
+            file_size_mb = file_size / (1024 * 1024)
+            
+            logger.info(f"PyPI ecosystem Excel export completed successfully:")
+            logger.info(f"  - File: {output_path}")
+            logger.info(f"  - Size: {file_size_mb:.2f} MB")
+            logger.info(f"  - Sheets: Dependencies" + (", Vulnerabilities" if filtered_vulnerabilities else ""))
+            
+            return output_path
+            
+        except Exception as e:
+            logger.error(f"Failed to export PyPI ecosystem Excel file: {str(e)}")
+            raise Exception(f"PyPI ecosystem Excel export failed: {str(e)}")
+            
+        finally:
+            # Restore original workbook
+            self.workbook = original_workbook
     
     def __del__(self):
         """Clean up workbook resources."""

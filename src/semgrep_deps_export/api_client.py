@@ -113,7 +113,19 @@ class SemgrepAPIClient:
         """Make a POST request to the API with error handling."""
         url = f"{self.BASE_URL}{endpoint}"
         
-        logger.debug(f"Making request to {url} with data: {json.dumps(data, indent=2)}")
+        # Check if this is an ecosystem filtering request for enhanced logging
+        is_ecosystem_request = (
+            "dependencyFilter" in data and 
+            "ecosystem" in data.get("dependencyFilter", {})
+        )
+        
+        if is_ecosystem_request:
+            ecosystem = data["dependencyFilter"]["ecosystem"]
+            logger.info(f"ECOSYSTEM API DEBUG: Making POST request to {url}")
+            logger.info(f"ECOSYSTEM API DEBUG: Request headers: {dict(self.session.headers)}")
+            logger.info(f"ECOSYSTEM API DEBUG: Full request payload: {json.dumps(data, indent=2)}")
+        else:
+            logger.debug(f"Making request to {url} with data: {json.dumps(data, indent=2)}")
         
         try:
             response = self.session.post(
@@ -122,15 +134,37 @@ class SemgrepAPIClient:
                 timeout=self.config.timeout
             )
             
+            if is_ecosystem_request:
+                logger.info(f"ECOSYSTEM API DEBUG: Response status: {response.status_code}")
+                logger.info(f"ECOSYSTEM API DEBUG: Response headers: {dict(response.headers)}")
+                logger.info(f"ECOSYSTEM API DEBUG: Raw response text: {response.text[:1000]}...")  # First 1000 chars
+            
             if not response.ok:
+                if is_ecosystem_request:
+                    logger.error(f"ECOSYSTEM API DEBUG: Error response status: {response.status_code}")
+                    logger.error(f"ECOSYSTEM API DEBUG: Error response text: {response.text}")
                 self._handle_api_error(response)
             
-            return response.json()
+            response_json = response.json()
+            
+            if is_ecosystem_request:
+                logger.info(f"ECOSYSTEM API DEBUG: Parsed response keys: {list(response_json.keys())}")
+                if "dependencies" in response_json:
+                    logger.info(f"ECOSYSTEM API DEBUG: Dependencies array length: {len(response_json['dependencies'])}")
+                if "error" in response_json:
+                    logger.error(f"ECOSYSTEM API DEBUG: Error in response: {response_json['error']}")
+            
+            return response_json
             
         except requests.exceptions.RequestException as e:
+            if is_ecosystem_request:
+                logger.error(f"ECOSYSTEM API DEBUG: Network error: {str(e)}")
             logger.error(f"Network error: {str(e)}")
             raise SemgrepAPIError(f"Network error: {str(e)}")
         except json.JSONDecodeError as e:
+            if is_ecosystem_request:
+                logger.error(f"ECOSYSTEM API DEBUG: JSON decode error: {str(e)}")
+                logger.error(f"ECOSYSTEM API DEBUG: Raw response that failed to decode: {response.text}")
             logger.error(f"Invalid JSON response: {str(e)}")
             raise SemgrepAPIError(f"Invalid JSON response: {str(e)}")
     
@@ -213,6 +247,9 @@ class SemgrepAPIClient:
         Returns:
             Dictionary containing projects data and pagination info
         """
+        if not self.config.deployment_slug:
+            raise SemgrepAPIError("deployment_slug is required for fetching repository information")
+            
         endpoint = f"/deployments/{self.config.deployment_slug}/projects"
         
         logger.info(f"Fetching projects for deployment slug: {self.config.deployment_slug} (page={page}, page_size={page_size})")
@@ -334,6 +371,169 @@ class SemgrepAPIClient:
         logger.debug(f"Retrieved {len(dependencies)} dependencies for repository {repo_id}")
         
         return response_data
+    
+    def get_dependencies_by_policy_filter(self, policy_setting: str, cursor: Optional[str] = None, limit: int = 10000) -> Dict[str, Any]:
+        """Get dependencies filtered by license policy setting."""
+        endpoint = f"/deployments/{self.config.deployment_id}/dependencies"
+        
+        data = {
+            "pageSize": limit,
+            "dependencyFilter": {
+                "licensePolicySetting": policy_setting
+            }
+        }
+        if cursor:
+            data["cursor"] = cursor
+        
+        logger.debug(f"Fetching dependencies for policy setting {policy_setting} (cursor: {cursor or 'None'}, limit: {limit})")
+        
+        response_data = self._make_request(endpoint, data)
+        
+        dependencies = response_data.get("dependencies", [])
+        logger.debug(f"Retrieved {len(dependencies)} dependencies for policy setting {policy_setting}")
+        
+        return response_data
+    
+    def get_all_dependencies_by_policy(self, policy_setting: str) -> Iterator[Dict[str, Any]]:
+        """Get all dependencies for a specific license policy setting using pagination."""
+        cursor = None
+        page_count = 0
+        total_dependencies = 0
+        
+        logger.info(f"Starting to fetch all dependencies for policy setting {policy_setting}")
+        
+        while True:
+            page_count += 1
+            logger.info(f"Fetching page {page_count} for policy {policy_setting}...")
+            
+            try:
+                response_data = self.get_dependencies_by_policy_filter(policy_setting, cursor=cursor, limit=10000)
+                
+                dependencies = response_data.get("dependencies", [])
+                page_count_deps = len(dependencies)
+                total_dependencies += page_count_deps
+                
+                logger.info(f"Page {page_count}: {page_count_deps} dependencies (total: {total_dependencies})")
+                
+                # Yield each dependency
+                for dependency in dependencies:
+                    yield dependency
+                
+                # Check if there are more pages
+                has_more = response_data.get("hasMore", response_data.get("has_more", False))
+                if not has_more:
+                    logger.info(f"Completed fetching all dependencies for policy {policy_setting}. Total: {total_dependencies} across {page_count} pages")
+                    break
+                
+                # Get cursor for next page
+                cursor = response_data.get("cursor")
+                if not cursor:
+                    logger.warning(f"has_more=true but no cursor provided for policy {policy_setting}, stopping pagination")
+                    break
+                    
+            except SemgrepAPIError as e:
+                if e.status_code == 429:  # Rate limited
+                    wait_time = 2 ** (page_count - 1)  # Exponential backoff
+                    logger.warning(f"Rate limited, waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise
+            except Exception as e:
+                logger.error(f"Unexpected error on page {page_count} for policy {policy_setting}: {str(e)}")
+                raise SemgrepAPIError(f"Unexpected error: {str(e)}")
+    
+    def get_dependencies_by_ecosystem_filter(self, ecosystem: str, cursor: Optional[str] = None, limit: int = 10000) -> Dict[str, Any]:
+        """Get dependencies filtered by ecosystem."""
+        endpoint = f"/deployments/{self.config.deployment_id}/dependencies"
+        
+        data = {
+            "pageSize": limit,
+            "dependencyFilter": {
+                "ecosystem": [ecosystem]
+            }
+        }
+        if cursor:
+            data["cursor"] = cursor
+        
+        # Enhanced logging for ecosystem filtering debugging
+        logger.info(f"ECOSYSTEM FILTER DEBUG: Attempting to fetch dependencies for ecosystem '{ecosystem}'")
+        logger.info(f"ECOSYSTEM FILTER DEBUG: Full request data: {data}")
+        logger.info(f"ECOSYSTEM FILTER DEBUG: Endpoint: {endpoint}")
+        
+        try:
+            response_data = self._make_request(endpoint, data)
+            logger.info(f"ECOSYSTEM FILTER DEBUG: Request successful for ecosystem '{ecosystem}'")
+            logger.info(f"ECOSYSTEM FILTER DEBUG: Response keys: {list(response_data.keys())}")
+            logger.info(f"ECOSYSTEM FILTER DEBUG: Dependencies count: {len(response_data.get('dependencies', []))}")
+        except SemgrepAPIError as e:
+            logger.error(f"ECOSYSTEM FILTER DEBUG: API Error for ecosystem '{ecosystem}'")
+            logger.error(f"ECOSYSTEM FILTER DEBUG: Status code: {e.status_code}")
+            logger.error(f"ECOSYSTEM FILTER DEBUG: Error message: {str(e)}")
+            logger.error(f"ECOSYSTEM FILTER DEBUG: Request data was: {data}")
+            
+            if e.status_code == 400:
+                logger.warning(f"Ecosystem filtering appears to be unsupported by the Semgrep API for ecosystem '{ecosystem}'. "
+                             f"This may be because the 'ecosystem' filter parameter is not available in the current API version.")
+                logger.info(f"Consider using alternative approaches or contact Semgrep support for ecosystem filtering capabilities.")
+                # Return empty result to gracefully handle unsupported filtering
+                return {"dependencies": [], "hasMore": False, "cursor": None}
+            else:
+                raise
+        
+        dependencies = response_data.get("dependencies", [])
+        logger.debug(f"Retrieved {len(dependencies)} dependencies for ecosystem {ecosystem}")
+        
+        return response_data
+    
+    def get_all_dependencies_by_ecosystem(self, ecosystem: str) -> Iterator[Dict[str, Any]]:
+        """Get all dependencies for a specific ecosystem using pagination."""
+        cursor = None
+        page_count = 0
+        total_dependencies = 0
+        
+        logger.info(f"Starting to fetch all dependencies for ecosystem {ecosystem}")
+        
+        while True:
+            page_count += 1
+            logger.info(f"Fetching page {page_count} for ecosystem {ecosystem}...")
+            
+            try:
+                response_data = self.get_dependencies_by_ecosystem_filter(ecosystem, cursor=cursor, limit=10000)
+                
+                dependencies = response_data.get("dependencies", [])
+                page_count_deps = len(dependencies)
+                total_dependencies += page_count_deps
+                
+                logger.info(f"Page {page_count}: {page_count_deps} dependencies (total: {total_dependencies})")
+                
+                # Yield each dependency
+                for dependency in dependencies:
+                    yield dependency
+                
+                # Check if there are more pages
+                has_more = response_data.get("hasMore", response_data.get("has_more", False))
+                if not has_more:
+                    logger.info(f"Completed fetching all dependencies for ecosystem {ecosystem}. Total: {total_dependencies} across {page_count} pages")
+                    break
+                
+                # Get cursor for next page
+                cursor = response_data.get("cursor")
+                if not cursor:
+                    logger.warning(f"has_more=true but no cursor provided for ecosystem {ecosystem}, stopping pagination")
+                    break
+                    
+            except SemgrepAPIError as e:
+                if e.status_code == 429:  # Rate limited
+                    wait_time = 2 ** (page_count - 1)  # Exponential backoff
+                    logger.warning(f"Rate limited, waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise
+            except Exception as e:
+                logger.error(f"Unexpected error on page {page_count} for ecosystem {ecosystem}: {str(e)}")
+                raise SemgrepAPIError(f"Unexpected error: {str(e)}")
     
     def get_all_dependencies_by_repository(self) -> Iterator[Dict[str, Any]]:
         """Get all dependencies by iterating over repositories."""
